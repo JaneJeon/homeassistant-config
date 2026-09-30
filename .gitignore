@@ -1,0 +1,27 @@
+# Secrets. Never commit these.
+secrets.yaml
+esphome/secrets.yaml
+# Zigbee2MQTT's config holds the Zigbee network key (only present on older installs).
+zigbee2mqtt/
+
+# Home Assistant's own internal state. HA manages it; HA backups cover it.
+.storage/
+.cloud/
+.ha_run.lock
+ip_bans.yaml
+deps/
+tts/
+backups/
+*.db
+*.db-shm
+*.db-wal
+*.log
+*.log.*
+
+# Installed and updated by HACS, not by us.
+custom_components/
+www/community/
+
+# Local clutter.
+.DS_Store
+.vscode/

@@ -1,0 +1,24 @@
+name: Check config
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Runs Home Assistant's own config check, in the official image,
+      # at the same version the Green runs (.HA_VERSION is written by HA).
+      - name: Home Assistant config check
+        if: hashFiles('configuration.yaml') != ''
+        run: |
+          version="$(tr -d '[:space:]' < .HA_VERSION)"
+          cp secrets.fake.yaml secrets.yaml
+          docker run --rm --entrypoint "" \
+            -v "$PWD:/config" -w /config \
+            "ghcr.io/home-assistant/home-assistant:${version}" \
+            python -m homeassistant --config /config --script check_config
