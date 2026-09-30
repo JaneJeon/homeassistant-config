@@ -9,7 +9,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Runs Home Assistant's own config check, in the official image,
       # at the same version the Green runs (.HA_VERSION is written by HA).
