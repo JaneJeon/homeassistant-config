@@ -3,6 +3,10 @@ secrets.yaml
 esphome/secrets.yaml
 # Zigbee2MQTT's config holds the Zigbee network key (only present on older installs).
 zigbee2mqtt/
+# ESPHome device configs often hold inline API keys and Wi-Fi passwords. Out of scope for now.
+esphome/
+.ssh/
+SERVICE_ACCOUNT.json
 
 # Home Assistant's own internal state. HA manages it; HA backups cover it.
 .storage/
