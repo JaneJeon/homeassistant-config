@@ -1,0 +1,1210 @@
+- id: '1751941562602'
+  alias: Automatically turn off rice cooker
+  description: 'Turns the rice cooker plug off after 15 minutes of keep-warm-level
+    draw (under 30 W). Uses a template trigger, NOT a numeric_state/device power trigger:
+    numeric_state only fires when the value CROSSES the threshold. The plug reads
+    0 W when off, which is already under 30 W, so if the cooker goes straight from
+    off to keep-warm (~23 W) without a high-power cook cycle in between, the value
+    never crosses 30 W downward and the old trigger never fired. That is what left
+    it on for 18 h on 2026-08-07. The template trigger fires on any false-to-true
+    transition, so it also covers the straight-to-keep-warm case. float(999) means
+    an unavailable or unknown power reading does NOT trigger a shut-off.'
+  triggers:
+  - for: 00:15:00
+    platform: template
+    value_template: '{{ is_state(''switch.0x04e3e5fffe0abb5f'', ''on'') and states(''sensor.0x04e3e5fffe0abb5f_power'')
+      | float(999) < 30 }}'
+  conditions: []
+  actions:
+  - target:
+      entity_id: switch.0x04e3e5fffe0abb5f
+    action: switch.turn_off
+  mode: single
+- id: '1752129532309'
+  alias: Living Room Light Off
+  description: ''
+  triggers:
+  - domain: mqtt
+    device_id: dca66d71f6557107cab2cf34b7e86956
+    type: action
+    subtype: 1_short_release
+    trigger: device
+  conditions: []
+  actions:
+  - action: light.toggle
+    metadata: {}
+    data: {}
+    target:
+      device_id: fd3ecb4f85bb58fea366b4f10d6a5d69
+  mode: single
+- id: '1752368740368'
+  alias: Intrusion Alert
+  description: ''
+  triggers:
+  - type: opened
+    device_id: fd335d09e8cb4d55ae9ca6273bbe58e5
+    entity_id: 04116d5aa5ae715ab6b8ccb329bc84cd
+    domain: binary_sensor
+    trigger: device
+  conditions:
+  - condition: device
+    device_id: ba991f4a75a7a6b48d8d25f81c307477
+    domain: device_tracker
+    entity_id: c5853ef7a223b3b1d69c7b72905ed260
+    type: is_not_home
+  actions:
+  - action: telegram_bot.send_message
+    metadata: {}
+    data:
+      message: Balcony Door opened while Jane was not home
+      entity_id:
+      - notify.telegram_bot_7842566738_7054392448
+  mode: single
+- id: '1752373518343'
+  alias: Automatically turn off desk light
+  description: ''
+  triggers:
+  - type: not_occupied
+    device_id: c6117d5cd885cb359a4547afac8d7372
+    entity_id: b79ea713d6d39c411efe922398b96917
+    domain: binary_sensor
+    trigger: device
+  conditions: []
+  actions:
+  - type: turn_off
+    device_id: ce67076131114d8783393e90dc026b08
+    entity_id: 8cf912a9d4ca21a485721a908d02bf9b
+    domain: switch
+  mode: single
+- id: '1752374572304'
+  alias: Automatically turn on desk light
+  description: ''
+  triggers:
+  - type: occupied
+    device_id: c6117d5cd885cb359a4547afac8d7372
+    entity_id: b79ea713d6d39c411efe922398b96917
+    domain: binary_sensor
+    trigger: device
+  conditions:
+  - condition: time
+    before: 00:00:00
+    after: 08:00:00
+  - type: is_not_occupied
+    condition: device
+    device_id: 6916206b6d85e171b2ce2df0e522a12f
+    entity_id: f6777078dc960bd5db2afc38107da35b
+    domain: binary_sensor
+    enabled: false
+  actions:
+  - type: turn_on
+    device_id: ce67076131114d8783393e90dc026b08
+    entity_id: 8cf912a9d4ca21a485721a908d02bf9b
+    domain: switch
+  mode: single
+- id: '1752713452048'
+  alias: Turn on the lights when I get home
+  description: ''
+  triggers:
+  - device_id: ba991f4a75a7a6b48d8d25f81c307477
+    domain: device_tracker
+    entity_id: c5853ef7a223b3b1d69c7b72905ed260
+    type: enters
+    trigger: device
+    zone: zone.home
+  conditions: []
+  actions:
+  - action: scene.turn_on
+    metadata: {}
+    target:
+      entity_id: scene.lights_on
+    data: {}
+  mode: single
+- id: '1752812895171'
+  alias: Turn on rice cooker
+  description: ''
+  triggers:
+  - domain: mqtt
+    device_id: 105263b07d4c379b4c967c8c31a40185
+    type: action
+    subtype: 1_short_release
+    trigger: device
+  conditions: []
+  actions:
+  - type: turn_on
+    device_id: edde7ba8bef97b27b65fd04c147367d6
+    entity_id: d3b4dc91072a99c3c7f61f4412ec92be
+    domain: switch
+  mode: single
+- id: '1752813027601'
+  alias: Turn on rice cooker for unsticking the bottom
+  description: ''
+  triggers:
+  - domain: mqtt
+    device_id: 105263b07d4c379b4c967c8c31a40185
+    type: action
+    subtype: 1_double_press
+    trigger: device
+  conditions: []
+  actions:
+  - type: turn_on
+    device_id: edde7ba8bef97b27b65fd04c147367d6
+    entity_id: d3b4dc91072a99c3c7f61f4412ec92be
+    domain: switch
+  - delay:
+      hours: 0
+      minutes: 15
+      seconds: 0
+      milliseconds: 0
+  - type: turn_off
+    device_id: edde7ba8bef97b27b65fd04c147367d6
+    entity_id: d3b4dc91072a99c3c7f61f4412ec92be
+    domain: switch
+  mode: single
+- id: '1752821983670'
+  alias: Automatically Turn off Lights At Midnight
+  description: Turn off all lights at bedtime. Fires at 00:00:30 to avoid racing with
+    the 5-minute color correction automation that fires at 00:00:00.
+  triggers:
+  - platform: time
+    at: 00:00:30
+  conditions: []
+  actions:
+  - action: scene.turn_on
+    metadata: {}
+    data: {}
+    target:
+      entity_id: scene.lights_off
+  mode: single
+- id: '1752986712447'
+  alias: Turn off the lights when I leave home
+  description: Turn off all lights when Jane leaves the home zone
+  triggers:
+  - device_id: ba991f4a75a7a6b48d8d25f81c307477
+    domain: device_tracker
+    entity_id: c5853ef7a223b3b1d69c7b72905ed260
+    type: leaves
+    zone: zone.home
+    platform: device
+  conditions: []
+  actions:
+  - action: scene.turn_on
+    metadata: {}
+    target:
+      entity_id: scene.lights_off
+    data: {}
+  mode: single
+- id: '1753053604201'
+  alias: Automatically turn off bedroom lights
+  description: ''
+  triggers:
+  - type: not_occupied
+    device_id: 6916206b6d85e171b2ce2df0e522a12f
+    entity_id: f6777078dc960bd5db2afc38107da35b
+    domain: binary_sensor
+    trigger: device
+  conditions: []
+  actions:
+  - type: turn_off
+    device_id: fd3ecb4f85bb58fea366b4f10d6a5d69
+    entity_id: 4af0d850638c2b37ab902499a5281682
+    domain: light
+  - type: turn_off
+    device_id: ec5df59a5b5cacada7df472aca0f162b
+    entity_id: 2bdffc80ddd7f15c20d3e3f93dd99f62
+    domain: light
+  mode: single
+- id: '1753053751861'
+  alias: Automatically turn on bedroom lights
+  description: ''
+  triggers:
+  - type: occupied
+    device_id: 6916206b6d85e171b2ce2df0e522a12f
+    entity_id: f6777078dc960bd5db2afc38107da35b
+    domain: binary_sensor
+    trigger: device
+  conditions:
+  - condition: time
+    after: 08:00:00
+    before: 00:00:00
+  actions:
+  - type: turn_on
+    device_id: fd3ecb4f85bb58fea366b4f10d6a5d69
+    entity_id: 4af0d850638c2b37ab902499a5281682
+    domain: light
+  - type: turn_on
+    device_id: ec5df59a5b5cacada7df472aca0f162b
+    entity_id: 2bdffc80ddd7f15c20d3e3f93dd99f62
+    domain: light
+  mode: single
+- id: '1753169649391'
+  alias: Automatically turn on the internet in the morning
+  description: ''
+  triggers:
+  - trigger: time
+    at: 07:00:00
+  conditions: []
+  actions:
+  - type: turn_on
+    device_id: 76afa219b5fc8a4fa8532ff080ea91f9
+    entity_id: 2d1fd84fffe1c06db4587c9f5c952a99
+    domain: switch
+  mode: single
+- id: '1775010151666'
+  alias: Intrusion Alert - Front Door
+  description: ''
+  triggers:
+  - type: opened
+    device_id: 16bf88cb13b513fdd18d10f2e217e261
+    entity_id: f92536c01d2720627d008609ccc81180
+    domain: binary_sensor
+    trigger: device
+  conditions:
+  - condition: device
+    device_id: ba991f4a75a7a6b48d8d25f81c307477
+    domain: device_tracker
+    entity_id: c5853ef7a223b3b1d69c7b72905ed260
+    type: is_not_home
+  actions:
+  - action: telegram_bot.send_message
+    metadata: {}
+    data:
+      message: Front Door opened while Jane was not home
+      entity_id:
+      - notify.telegram_bot_7842566738_7054392448
+  mode: single
+- id: '1775942323870'
+  alias: Alert - automation failure
+  description: 'Generic monitor: fires on any system_log_event with level ERROR that
+    relates to an automation. Sends Telegram with the error details. Mode single so
+    cascading failures don''t spam.'
+  triggers:
+  - platform: event
+    event_type: system_log_event
+    event_data:
+      level: ERROR
+  conditions:
+  - condition: template
+    value_template: '{{ ''automation'' in (trigger.event.data.name | default('''')
+      | lower) or ''automation'' in (trigger.event.data.message | default('''') |
+      lower) }}'
+  actions:
+  - action: telegram_bot.send_message
+    data:
+      chat_id: 7054392448
+      message: '⚠️ Automation error
+
+
+        Source: {{ trigger.event.data.name | default(''unknown'') }}
+
+        Message: {{ trigger.event.data.message | default(''no message'') | truncate(500)
+        }}
+
+        Time: {{ now().strftime(''%H:%M:%S'') }}'
+  mode: single
+- id: '1775951952593'
+  alias: Push wind forecast to VictoriaMetrics
+  description: Runs every hour at :05 to push the 48h wind forecast (eff_speed + bearing)
+    to VictoriaMetrics as future-timestamped metrics via rest_command.
+  triggers:
+  - platform: time_pattern
+    minutes: '5'
+  conditions: []
+  actions:
+  - action: rest_command.push_forecast_to_vm
+  mode: single
+- id: '1776555200832'
+  alias: Automatically Switch HDMI Input When Xbox Turns Off
+  description: ''
+  triggers:
+  - trigger: state
+    entity_id:
+    - binary_sensor.power_plug_upper_xbox_series_x_power_state
+    to:
+    - 'off'
+    from:
+    - 'on'
+  conditions: []
+  actions:
+  - action: script.hdmi_switch_to_input_1
+    metadata: {}
+    data: {}
+  mode: single
+- id: '1777798661659'
+  alias: ZP1 - Reapply power reporting on Zigbee rejoin
+  description: When either ThirdReality ZP1 dual plug rejoins the Zigbee network,
+    re-applies activePower configure reporting (min=5s, max=10s, change=10) to both
+    endpoints. Needed because configure reporting is stored on the device and lost
+    on rejoin — Z2M does not auto-reapply it.
+  triggers:
+  - platform: mqtt
+    topic: zigbee2mqtt/bridge/event
+  conditions:
+  - condition: template
+    value_template: '{{ trigger.payload_json.get(''type'') == ''device_joined'' and
+      trigger.payload_json.get(''data'', {}).get(''ieee_address'') in [''0x4ce17552312a0000'',
+      ''0x4ce175523e8d0000''] }}'
+  actions:
+  - delay:
+      seconds: 10
+  - data:
+      topic: zigbee2mqtt/bridge/request/device/reporting/configure
+      payload: '{"id":"{{ trigger.payload_json.data.friendly_name }}","endpoint":1,"cluster":"haElectricalMeasurement","attribute":"activePower","minimum_report_interval":5,"maximum_report_interval":10,"reportable_change":10}'
+    action: mqtt.publish
+  - delay:
+      seconds: 4
+  - data:
+      topic: zigbee2mqtt/bridge/request/device/reporting/configure
+      payload: '{"id":"{{ trigger.payload_json.data.friendly_name }}","endpoint":2,"cluster":"haElectricalMeasurement","attribute":"activePower","minimum_report_interval":5,"maximum_report_interval":10,"reportable_change":10}'
+    action: mqtt.publish
+  mode: parallel
+  max: 5
+- id: '1777844105178'
+  alias: Automatically Switch HDMI Input When Xbox Turns On
+  description: ''
+  triggers:
+  - trigger: state
+    entity_id:
+    - binary_sensor.power_plug_upper_xbox_series_x_power_state
+    to:
+    - 'on'
+    from:
+    - 'off'
+  conditions: []
+  actions:
+  - action: script.hdmi_switch_to_input_2
+    metadata: {}
+    data: {}
+  mode: single
+- id: '1782553623836'
+  alias: Living Room warm-end color correction
+  description: 'Rides AL''s computed color curve (switch.adaptive_lighting_living_room)
+    but corrects the Linkind bulbs'' warm end toward a tunable anchor, fading the
+    correction to zero by the fade-out Kelvin. AL adapt_color is OFF so AL does not
+    drive these bulbs; this automation does. Color only — brightness left manual.
+    Warm anchor + fade point are live-tunable via input_number helpers (living_room_warm_hue
+    / living_room_warm_saturation / living_room_warm_fade_out). Gated off while input_boolean.zoom_mode
+    is on, so Zoom mode''s neutral white is not overwritten within 5 minutes. NOTE:
+    the variables are split into four sequential steps on purpose. Editing tools that
+    write this config alphabetise the keys inside a single variables block, which
+    breaks any variable that references another one in the same block. Keep each block
+    self-contained.'
+  triggers:
+  - minutes: /5
+    platform: time_pattern
+  - event: start
+    platform: homeassistant
+  - entity_id:
+    - light.living_room_living_room_light_front_corner
+    - light.living_room_living_room_light_back_corner
+    platform: state
+    to: 'on'
+  - attribute: hs_color
+    entity_id: switch.adaptive_lighting_living_room
+    platform: state
+  - entity_id:
+    - input_number.living_room_warm_hue
+    - input_number.living_room_warm_saturation
+    - input_number.living_room_warm_fade_out
+    platform: state
+  conditions:
+  - condition: state
+    entity_id: input_boolean.zoom_mode
+    state: 'off'
+  - condition: template
+    value_template: '{{ is_state(''light.living_room_living_room_light_front_corner'',''on'')
+      or is_state(''light.living_room_living_room_light_back_corner'',''on'') }}'
+  actions:
+  - alias: Inputs (no cross-references)
+    variables:
+      al_hs: '{{ state_attr(''switch.adaptive_lighting_living_room'',''hs_color'')
+        }}'
+      al_k: '{{ state_attr(''switch.adaptive_lighting_living_room'',''color_temp_kelvin'')
+        | float(1800) }}'
+      fade_k: '{{ states(''input_number.living_room_warm_fade_out'') | float(2700)
+        }}'
+      on_lights: '{{ expand(''light.living_room_living_room_light_front_corner'',''light.living_room_living_room_light_back_corner'')
+        | selectattr(''state'',''eq'',''on'') | map(attribute=''entity_id'') | list
+        }}'
+      warm_h: '{{ states(''input_number.living_room_warm_hue'') | float(26.929) }}'
+      warm_s: '{{ states(''input_number.living_room_warm_saturation'') | float(62.992)
+        }}'
+  - alias: Split AL's hue and saturation, and the fade denominator
+    variables:
+      al_h: '{{ (al_hs[0] if al_hs else 30) | float(30) }}'
+      al_s: '{{ (al_hs[1] if al_hs else 100) | float(100) }}'
+      denom: '{{ [fade_k - 1800, 1] | max }}'
+  - alias: How strongly the warm correction applies at this Kelvin
+    variables:
+      strength: '{{ [[ (fade_k - al_k)/denom, 0] | max, 1] | min }}'
+  - alias: Blend AL's colour toward the warm anchor
+    variables:
+      corr_h: '{{ (al_h + (warm_h - al_h) * strength) | round(3) }}'
+      corr_s: '{{ (al_s + (warm_s - al_s) * strength) | round(3) }}'
+  - action: light.turn_on
+    continue_on_error: true
+    data:
+      hs_color: '{{ [corr_h, corr_s] }}'
+      transition: 2
+    target:
+      entity_id: '{{ on_lights }}'
+  mode: restart
+- id: '1782642243123'
+  alias: Toggle Living Room Light
+  description: ''
+  triggers:
+  - domain: mqtt
+    device_id: dca66d71f6557107cab2cf34b7e86956
+    type: action
+    subtype: 1_long_release
+    trigger: device
+  conditions: []
+  actions:
+  - action: light.toggle
+    metadata: {}
+    target:
+      device_id:
+      - ec5df59a5b5cacada7df472aca0f162b
+      - 06b073924bf18860e2c771f3d77c20bf
+      - f3a1261449ff0006c23245f6bae59231
+    data: {}
+  mode: single
+- id: '1783926323927'
+  alias: Automatically turn on lights in the morning
+  description: Turn on all lights at 8 AM every day
+  triggers:
+  - platform: time
+    at: 08:00:00
+  conditions: []
+  actions:
+  - action: scene.turn_on
+    metadata: {}
+    target:
+      entity_id: scene.lights_on
+    data: {}
+  mode: single
+- id: '1784167249575'
+  alias: ZP1 - Heartbeat reapply power reporting config [DISABLED - DO NOT RE-ENABLE]
+  description: '*** DO NOT RE-ENABLE. THIS AUTOMATION POWER-CYCLES THE ROUTER AND
+    THE HA GREEN. ***
+
+
+    Disabled 2026-07-17. Superseded by ''ZP1 - Reapply power reporting when stale'',
+    which does the same job safely. Kept only as a record; delete once the Craft doc
+    is confirmed.
+
+
+    WHY IT IS DANGEROUS: this re-sent configReport to all 4 ZP1 endpoints unconditionally
+    every 30 min (48x/day). Sending configReport writes reporting config to the plug''s
+    NVM. On ~7% of runs (4 of ~57 on 2026-07-16/17) it faulted the plug MCU mid-radio-transaction
+    -> watchdog reset -> relay dropped out and re-closed via power_on_behavior=previous
+    -> hard power-cycle of everything downstream. Lower plug (61468) carries the router
+    AND the HA Green, so those runs took down internet + HA itself with an unclean
+    sqlite shutdown. Upper plug (365) carries the desk.
+
+
+    IT LOOKS INNOCENT AND IS NOT: no OFF state is ever written to the logbook, because
+    the plug reboots and self-restores. The only fingerprint is ''Delivery failed''
+    on configReport in the Z2M log plus a burst of republishes. Do not trust ''no
+    state change in the logbook'' as evidence the plugs are fine -- that is exactly
+    the trap.
+
+
+    The original premise (that this is ''a no-op if the devices already have the config'')
+    is FALSE. It is a write every time.'
+  triggers:
+  - platform: time_pattern
+    minutes: /30
+  conditions:
+  - condition: template
+    value_template: '{{ false }}'
+  actions:
+  - action: mqtt.publish
+    data:
+      topic: zigbee2mqtt/bridge/request/device/reporting/configure
+      payload: '{"id":"Power Plug (Upper)","endpoint":1,"cluster":"haElectricalMeasurement","attribute":"activePower","minimum_report_interval":5,"maximum_report_interval":10,"reportable_change":10}'
+  - delay:
+      seconds: 4
+  - action: mqtt.publish
+    data:
+      topic: zigbee2mqtt/bridge/request/device/reporting/configure
+      payload: '{"id":"Power Plug (Upper)","endpoint":2,"cluster":"haElectricalMeasurement","attribute":"activePower","minimum_report_interval":5,"maximum_report_interval":10,"reportable_change":10}'
+  - delay:
+      seconds: 4
+  - action: mqtt.publish
+    data:
+      topic: zigbee2mqtt/bridge/request/device/reporting/configure
+      payload: '{"id":"Power Plug (Lower)","endpoint":1,"cluster":"haElectricalMeasurement","attribute":"activePower","minimum_report_interval":5,"maximum_report_interval":10,"reportable_change":10}'
+  - delay:
+      seconds: 4
+  - action: mqtt.publish
+    data:
+      topic: zigbee2mqtt/bridge/request/device/reporting/configure
+      payload: '{"id":"Power Plug (Lower)","endpoint":2,"cluster":"haElectricalMeasurement","attribute":"activePower","minimum_report_interval":5,"maximum_report_interval":10,"reportable_change":10}'
+  mode: single
+- id: zp1_reapply_power_reporting_when_stale
+  alias: ZP1 - Reapply power reporting when stale
+  description: 'Checks every 5 min whether any ThirdReality ZP1 endpoint has STOPPED
+    reporting activePower, and only then re-sends configure reporting -- to that endpoint
+    alone.
+
+
+    Replaces ''ZP1 - Heartbeat reapply power reporting config'' (id 1784167249575,
+    now disabled), which re-sent configReport to all 4 endpoints unconditionally every
+    30 min. On 2026-07-16/17 that faulted the plug MCU on ~7% of runs (4 of ~57):
+    the plug watchdog-reset, the relay dropped out and re-closed via power_on_behavior=previous,
+    hard power-cycling everything downstream -- including the router and the HA Green
+    itself. No OFF state was ever logged because the plug reboots and self-restores.
+    See Craft doc.
+
+
+    Threshold is 660s because maximum_report_interval is now 300s: a healthy endpoint
+    reports at least every 5 min, so 11 min = 2x + margin => no false positives. If
+    you ever change max_report_interval, change this threshold too.
+
+
+    Writes when healthy: 0/day (vs 48/day for the old heartbeat).'
+  triggers:
+  - platform: time_pattern
+    minutes: /5
+  conditions: []
+  actions:
+  - if:
+    - condition: template
+      value_template: '{% set s = states[''sensor.0x4ce17552312a0000_power_1''] %}{{
+        s is not none and s.state not in [''unknown'',''unavailable''] and (now()
+        - s.last_reported).total_seconds() > 660 }}'
+    then:
+    - action: mqtt.publish
+      data:
+        topic: zigbee2mqtt/bridge/request/device/reporting/configure
+        payload: '{"id":"Power Plug (Upper)","endpoint":1,"cluster":"haElectricalMeasurement","attribute":"activePower","minimum_report_interval":5,"maximum_report_interval":300,"reportable_change":10}'
+    - delay:
+        seconds: 4
+  - if:
+    - condition: template
+      value_template: '{% set s = states[''sensor.0x4ce17552312a0000_power_2''] %}{{
+        s is not none and s.state not in [''unknown'',''unavailable''] and (now()
+        - s.last_reported).total_seconds() > 660 }}'
+    then:
+    - action: mqtt.publish
+      data:
+        topic: zigbee2mqtt/bridge/request/device/reporting/configure
+        payload: '{"id":"Power Plug (Upper)","endpoint":2,"cluster":"haElectricalMeasurement","attribute":"activePower","minimum_report_interval":5,"maximum_report_interval":300,"reportable_change":10}'
+    - delay:
+        seconds: 4
+  - if:
+    - condition: template
+      value_template: '{% set s = states[''sensor.0x4ce175523e8d0000_power_1''] %}{{
+        s is not none and s.state not in [''unknown'',''unavailable''] and (now()
+        - s.last_reported).total_seconds() > 660 }}'
+    then:
+    - action: mqtt.publish
+      data:
+        topic: zigbee2mqtt/bridge/request/device/reporting/configure
+        payload: '{"id":"Power Plug (Lower)","endpoint":1,"cluster":"haElectricalMeasurement","attribute":"activePower","minimum_report_interval":5,"maximum_report_interval":300,"reportable_change":10}'
+    - delay:
+        seconds: 4
+  - if:
+    - condition: template
+      value_template: '{% set s = states[''sensor.0x4ce175523e8d0000_power_2''] %}{{
+        s is not none and s.state not in [''unknown'',''unavailable''] and (now()
+        - s.last_reported).total_seconds() > 660 }}'
+    then:
+    - action: mqtt.publish
+      data:
+        topic: zigbee2mqtt/bridge/request/device/reporting/configure
+        payload: '{"id":"Power Plug (Lower)","endpoint":2,"cluster":"haElectricalMeasurement","attribute":"activePower","minimum_report_interval":5,"maximum_report_interval":300,"reportable_change":10}'
+  mode: single
+- id: '1786940371075'
+  alias: Zoom mode
+  description: 'ON: snapshot all four lights, stop Bedroom Adaptive Lighting adapting
+    colour, turn OFF everything except the Living Room front corner, and set that
+    one to 100% at input_number.zoom_mode_color_temp. Jane tested this on camera 2026-08-17:
+    the back lights wash her out, only the front corner should be lit, and it wants
+    100% during a call even though her everyday default is ~85%. OFF: restore the
+    snapshot (which brings back her 85% and the other lights), re-enable Bedroom AL
+    adapt-colour, re-apply AL, and re-trigger the Living Room warm-end correction.
+    While ON, moving the Kelvin slider re-applies live. The Living Room warm-end correction
+    automation is separately gated on this same boolean, otherwise it would push the
+    front corner back to orange within 5 minutes.'
+  triggers:
+  - entity_id: input_boolean.zoom_mode
+    id: 'on'
+    platform: state
+    to: 'on'
+  - entity_id: input_boolean.zoom_mode
+    id: 'off'
+    platform: state
+    to: 'off'
+  - entity_id: input_number.zoom_mode_color_temp
+    id: retune
+    platform: state
+  actions:
+  - choose:
+    - alias: Zoom mode on
+      conditions:
+      - condition: trigger
+        id: 'on'
+      sequence:
+      - action: scene.create
+        alias: Snapshot all four lights so OFF can restore them
+        data:
+          scene_id: zoom_mode_restore
+          snapshot_entities: '{{ zoom_all_lights }}'
+      - action: switch.turn_off
+        alias: Stop Bedroom Adaptive Lighting re-applying its warm colour
+        target:
+          entity_id: switch.adaptive_lighting_adapt_color_bedroom
+      - action: light.turn_off
+        alias: Kill everything behind her
+        continue_on_error: true
+        data:
+          transition: 2
+        target:
+          entity_id: '{{ zoom_lights_off }}'
+      - action: light.turn_on
+        alias: 'Front corner becomes the key light: full brightness, neutral white'
+        continue_on_error: true
+        data:
+          brightness_pct: 100
+          color_temp_kelvin: '{{ states(''input_number.zoom_mode_color_temp'') | int(4000)
+            }}'
+          transition: 2
+        target:
+          entity_id: '{{ zoom_key_light }}'
+    - alias: Retune while zoom mode is on
+      conditions:
+      - condition: trigger
+        id: retune
+      - condition: state
+        entity_id: input_boolean.zoom_mode
+        state: 'on'
+      sequence:
+      - action: light.turn_on
+        continue_on_error: true
+        data:
+          brightness_pct: 100
+          color_temp_kelvin: '{{ states(''input_number.zoom_mode_color_temp'') | int(4000)
+            }}'
+          transition: 2
+        target:
+          entity_id: '{{ zoom_key_light }}'
+    - alias: Zoom mode off
+      conditions:
+      - condition: trigger
+        id: 'off'
+      sequence:
+      - action: scene.turn_on
+        alias: Restore the pre-zoom on/off, brightness and colour
+        continue_on_error: true
+        data:
+          transition: 2
+        target:
+          entity_id: scene.zoom_mode_restore
+      - action: switch.turn_on
+        alias: Hand the Bedroom bulbs back to Adaptive Lighting
+        target:
+          entity_id: switch.adaptive_lighting_adapt_color_bedroom
+      - action: adaptive_lighting.apply
+        alias: Re-apply Adaptive Lighting now instead of waiting for the 5 minute
+          interval
+        continue_on_error: true
+        data:
+          adapt_brightness: false
+          adapt_color: true
+          entity_id: switch.adaptive_lighting_bedroom
+          transition: 2
+          turn_on_lights: false
+      - action: automation.trigger
+        alias: Re-apply the Living Room warm-end correction now
+        continue_on_error: true
+        data:
+          skip_condition: false
+        target:
+          entity_id: automation.living_room_warm_end_color_correction
+  max: 5
+  mode: queued
+  variables:
+    zoom_all_lights:
+    - light.living_room_living_room_light_front_corner
+    - light.living_room_living_room_light_back_corner
+    - light.ikea_smart_light_bulb_upper
+    - light.0xc02cedfffe7ce5e3
+    zoom_key_light: light.living_room_living_room_light_front_corner
+    zoom_lights_off:
+    - light.living_room_living_room_light_back_corner
+    - light.ikea_smart_light_bulb_upper
+    - light.0xc02cedfffe7ce5e3
+- id: '1787387816421'
+  alias: ZP1 - Read-only liveness poll
+  description: Every 5 minutes, publish a READ-ONLY zigbee2mqtt /get to BOTH ThirdReality
+    ZP1 plugs by IEEE (0x4ce17552312a0000 = Router+HA-Green dongle; 0x4ce175523e8d0000
+    = Xbox+Desk). A /get only READS the device state and forces a fresh unsolicited-style
+    report; it NEVER sends configure-reporting and NEVER flash-writes the plug, so
+    it carries ZERO reset risk. This is the only safe touch on these plugs. Runs at
+    second :30 to avoid the top-of-minute. Companion alert automation watches the
+    energy accumulators for staleness. DO NOT convert this to a write/set/configure-reporting
+    call.
+  triggers:
+  - minutes: /5
+    platform: time_pattern
+    seconds: 30
+  actions:
+  - data:
+      payload: '{"power_1":"","power_2":"","energy_1":"","energy_2":""}'
+      topic: zigbee2mqtt/0x4ce17552312a0000/get
+    action: mqtt.publish
+  - data:
+      payload: '{"power_1":"","power_2":"","energy_1":"","energy_2":""}'
+      topic: zigbee2mqtt/0x4ce175523e8d0000/get
+    action: mqtt.publish
+  mode: single
+- id: '1787387894351'
+  alias: ZP1 - Read-only liveness alert
+  description: 'READ-ONLY liveness alert for the two ThirdReality ZP1 plugs. Sends
+    Telegram when a plug''s ENERGY accumulator (better proxy than power, which freezes
+    on steady load) stops advancing for >90 min despite the 5-min /get poll, plus
+    a recovery notice when it resumes. Liveness per plug = newest last_reported across
+    BOTH energy endpoints (energy is quantized to 0.01 kWh; low-watt endpoints tick
+    slowly, so take whichever ticked most recently). Threshold 90 min (5400s) chosen
+    from measured 0.01-kWh tick cadence: Router ~46min, Xbox ~78min, HA-Green ~154min,
+    Desk ~10min - 90 min sits above every observed single-endpoint healthy cadence
+    so a healthy steady plug never trips. It CANNOT be made shorter without configuring
+    faster energy reporting, which needs a FORBIDDEN configure-reporting flash-write.
+    BLIND SPOT: plug 0x4ce17552312a0000 powers the router + HA Green; if it hard-crashes,
+    HA loses power/internet and CANNOT send Telegram - that case must be caught externally
+    (Uptime Kuma seeing the internet drop). This alert reliably covers degraded-reporting
+    worsening on either plug and a crash of the Xbox/Desk plug 0x4ce175523e8d0000.
+    Residual false-positive: if BOTH endpoints of a plug sit near 0 W (loads switched
+    off) for >90 min, energy legitimately stops and looks like an outage - inherent
+    to an energy-based signal.'
+  triggers:
+  - id: staleness_check
+    minutes: /5
+    platform: time_pattern
+    seconds: 45
+  - entity_id:
+    - sensor.0x4ce17552312a0000_energy_1
+    - sensor.0x4ce17552312a0000_energy_2
+    - sensor.0x4ce175523e8d0000_energy_1
+    - sensor.0x4ce175523e8d0000_energy_2
+    id: energy_report
+    platform: state
+  actions:
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: '{% set a = as_timestamp(states[''sensor.0x4ce17552312a0000_energy_1''].last_reported,
+          0) %}{% set b = as_timestamp(states[''sensor.0x4ce17552312a0000_energy_2''].last_reported,
+          0) %}{% set age = as_timestamp(now()) - [a,b]|max %}{{ trigger.id == ''staleness_check''
+          and 5400 < age <= 5730 }}'
+      sequence:
+      - data:
+          message: 'Router/HA-Green plug (0x4ce17552312a0000) has produced NO fresh
+            energy reading for {{ ((as_timestamp(now()) - [as_timestamp(states[''sensor.0x4ce17552312a0000_energy_1''].last_reported,0),
+            as_timestamp(states[''sensor.0x4ce17552312a0000_energy_2''].last_reported,0)]|max)/60)|round(0)|int
+            }} min despite 5-min /get polls - it may have stopped answering. BLIND
+            SPOT: this plug powers the router + HA Green, so a HARD crash would take
+            HA offline and it could NOT send this. A totally silent HA is the real
+            signal here - rely on external Uptime Kuma.'
+          title: ZP1 liveness alert
+        target:
+          entity_id: notify.telegram_bot_7842566738_7054392448
+        action: notify.send_message
+    - conditions:
+      - condition: template
+        value_template: '{% set a = as_timestamp(states[''sensor.0x4ce175523e8d0000_energy_1''].last_reported,
+          0) %}{% set b = as_timestamp(states[''sensor.0x4ce175523e8d0000_energy_2''].last_reported,
+          0) %}{% set age = as_timestamp(now()) - [a,b]|max %}{{ trigger.id == ''staleness_check''
+          and 5400 < age <= 5730 }}'
+      sequence:
+      - data:
+          message: Xbox/Desk plug (0x4ce175523e8d0000) has produced NO fresh energy
+            reading for {{ ((as_timestamp(now()) - [as_timestamp(states['sensor.0x4ce175523e8d0000_energy_1'].last_reported,0),
+            as_timestamp(states['sensor.0x4ce175523e8d0000_energy_2'].last_reported,0)]|max)/60)|round(0)|int
+            }} min despite 5-min /get polls - the plug may have crashed or dropped
+            off the mesh.
+          title: ZP1 liveness alert
+        target:
+          entity_id: notify.telegram_bot_7842566738_7054392448
+        action: notify.send_message
+    - conditions:
+      - condition: template
+        value_template: '{{ trigger.id == ''energy_report'' and trigger.entity_id
+          in [''sensor.0x4ce17552312a0000_energy_1'',''sensor.0x4ce17552312a0000_energy_2'']
+          and (as_timestamp(trigger.to_state.last_reported) - [as_timestamp(trigger.from_state.last_reported,
+          0), as_timestamp(states[(''sensor.0x4ce17552312a0000_energy_2'' if trigger.entity_id
+          == ''sensor.0x4ce17552312a0000_energy_1'' else ''sensor.0x4ce17552312a0000_energy_1'')].last_reported,
+          0)]|max) > 5400 }}'
+      sequence:
+      - data:
+          message: Router/HA-Green plug (0x4ce17552312a0000) is answering again -
+            fresh energy report after {{ ((as_timestamp(trigger.to_state.last_reported)
+            - [as_timestamp(trigger.from_state.last_reported,0), as_timestamp(states[('sensor.0x4ce17552312a0000_energy_2'
+            if trigger.entity_id == 'sensor.0x4ce17552312a0000_energy_1' else 'sensor.0x4ce17552312a0000_energy_1')].last_reported,0)]|max)/60)|round(0)|int
+            }} min of silence.
+          title: ZP1 liveness recovered
+        target:
+          entity_id: notify.telegram_bot_7842566738_7054392448
+        action: notify.send_message
+    - conditions:
+      - condition: template
+        value_template: '{{ trigger.id == ''energy_report'' and trigger.entity_id
+          in [''sensor.0x4ce175523e8d0000_energy_1'',''sensor.0x4ce175523e8d0000_energy_2'']
+          and (as_timestamp(trigger.to_state.last_reported) - [as_timestamp(trigger.from_state.last_reported,
+          0), as_timestamp(states[(''sensor.0x4ce175523e8d0000_energy_2'' if trigger.entity_id
+          == ''sensor.0x4ce175523e8d0000_energy_1'' else ''sensor.0x4ce175523e8d0000_energy_1'')].last_reported,
+          0)]|max) > 5400 }}'
+      sequence:
+      - data:
+          message: Xbox/Desk plug (0x4ce175523e8d0000) is answering again - fresh
+            energy report after {{ ((as_timestamp(trigger.to_state.last_reported)
+            - [as_timestamp(trigger.from_state.last_reported,0), as_timestamp(states[('sensor.0x4ce175523e8d0000_energy_2'
+            if trigger.entity_id == 'sensor.0x4ce175523e8d0000_energy_1' else 'sensor.0x4ce175523e8d0000_energy_1')].last_reported,0)]|max)/60)|round(0)|int
+            }} min of silence.
+          title: ZP1 liveness recovered
+        target:
+          entity_id: notify.telegram_bot_7842566738_7054392448
+        action: notify.send_message
+  max: 10
+  mode: queued
+- id: '1789900078627'
+  alias: Resolve - Paperless storage recovered
+  description: Clear the Paperless low-storage warning after HA Green remains above
+    6 GiB for 30 minutes.
+  triggers:
+  - platform: numeric_state
+    entity_id: sensor.system_monitor_disk_free
+    above: 6
+    for: 00:30:00
+  actions:
+  - action: persistent_notification.dismiss
+    data:
+      notification_id: paperless_storage_low
+  - action: telegram_bot.send_message
+    data:
+      chat_id: 7054392448
+      message: '✅ Paperless storage recovered
+
+
+        HA Green now has {{ states(''sensor.system_monitor_disk_free'') }} GiB free.'
+  mode: single
+- id: '1789900079944'
+  alias: Alert - Paperless storage low
+  description: Warn Jane when HA Green free space threatens the Paperless mail archive.
+    Fires after 30 minutes below 5 GiB and once daily while still low. The threshold
+    preserves time to expand or migrate storage before ingestion fails.
+  triggers:
+  - platform: numeric_state
+    entity_id: sensor.system_monitor_disk_free
+    below: 5
+    for: 00:30:00
+  - platform: time
+    at: 09:00:00
+  conditions:
+  - condition: numeric_state
+    entity_id: sensor.system_monitor_disk_free
+    below: 5
+  actions:
+  - action: telegram_bot.send_message
+    data:
+      chat_id: 7054392448
+      message: '⚠️ Paperless storage low
+
+
+        HA Green has {{ states(''sensor.system_monitor_disk_free'') }} GiB free. Mail
+        ingestion is protected by a 5 GiB intervention threshold. Expand or migrate
+        Paperless storage before shredding new originals.'
+  - action: persistent_notification.create
+    data:
+      notification_id: paperless_storage_low
+      title: Paperless storage low
+      message: HA Green has {{ states('sensor.system_monitor_disk_free') }} GiB free.
+        Expand or migrate Paperless storage before relying on new scans.
+  mode: single
+- id: '1789902215888'
+  alias: Alert - Automatic backup failed
+  description: Warn Jane immediately if Home Assistant reports a failed automatic
+    backup. This protects the Paperless pending-shred rule from silent backup failure.
+  triggers:
+  - platform: state
+    entity_id: event.backup_automatic_backup
+    attribute: event_type
+    to: failed
+  actions:
+  - action: persistent_notification.create
+    data:
+      notification_id: automatic_backup_problem
+      title: Automatic backup failed
+      message: 'Home Assistant reported an automatic backup failure. Do not clear
+        the Paperless pending-shred tray until a later backup succeeds. Reason: {{
+        state_attr(''event.backup_automatic_backup'', ''failed_reason'') | default(''not
+        reported'', true) }}'
+  - action: telegram_bot.send_message
+    data:
+      chat_id: 7054392448
+      message: '❌ Automatic backup failed
+
+
+        Do not clear the Paperless pending-shred tray until a later backup succeeds.
+
+
+        Reason: {{ state_attr(''event.backup_automatic_backup'', ''failed_reason'')
+        | default(''not reported'', true) }}'
+  mode: single
+- id: '1789902217170'
+  alias: Alert - Automatic backup stale
+  description: Warn Jane once daily when the last successful automatic Home Assistant
+    backup is more than 36 hours old. This protects the Paperless pending-shred rule.
+  triggers:
+  - platform: time
+    at: 09:15:00
+  conditions:
+  - condition: template
+    value_template: '{{ as_timestamp(now()) - as_timestamp(states(''sensor.backup_last_successful_automatic_backup''),
+      0) > 129600 }}'
+  actions:
+  - action: persistent_notification.create
+    data:
+      notification_id: automatic_backup_problem
+      title: Automatic backup is stale
+      message: The last successful automatic backup is more than 36 hours old. Do
+        not clear the Paperless pending-shred tray until backup health recovers.
+  - action: telegram_bot.send_message
+    data:
+      chat_id: 7054392448
+      message: '⚠️ Automatic backup is stale
+
+
+        The last successful automatic backup is more than 36 hours old. Do not clear
+        the Paperless pending-shred tray until backup health recovers.'
+  mode: single
+- id: '1789902218414'
+  alias: Resolve - Automatic backup recovered
+  description: Dismiss the backup problem warning whenever Home Assistant records
+    a new successful automatic backup.
+  triggers:
+  - platform: state
+    entity_id: sensor.backup_last_successful_automatic_backup
+  conditions:
+  - condition: template
+    value_template: '{{ trigger.to_state is not none and trigger.from_state is not
+      none and trigger.to_state.state not in [''unknown'', ''unavailable'', ''none'',
+      ''''] and trigger.to_state.state != trigger.from_state.state }}'
+  actions:
+  - action: persistent_notification.dismiss
+    data:
+      notification_id: automatic_backup_problem
+  mode: single
+- id: '1789903611981'
+  alias: Alert - Paperless pipeline service down
+  description: Warn Jane if either Paperless-ngx or the Samba ingest service remains
+    stopped or unavailable for five minutes. New paper must not be shredded while
+    this warning is active.
+  triggers:
+  - platform: state
+    entity_id: binary_sensor.paperless_ngx_running
+    to: 'off'
+    for: 00:05:00
+  - platform: state
+    entity_id: binary_sensor.paperless_ngx_running
+    to: unavailable
+    for: 00:05:00
+  - platform: state
+    entity_id: binary_sensor.samba_share_running
+    to: 'off'
+    for: 00:05:00
+  - platform: state
+    entity_id: binary_sensor.samba_share_running
+    to: unavailable
+    for: 00:05:00
+  actions:
+  - action: persistent_notification.create
+    data:
+      notification_id: paperless_pipeline_service_down
+      title: Paperless mail pipeline unavailable
+      message: '{{ trigger.to_state.name }} has been {{ trigger.to_state.state }}
+        for five minutes. Keep physical mail and do not clear the pending-shred tray
+        until both Paperless-ngx and Samba are running again.'
+  - action: telegram_bot.send_message
+    data:
+      chat_id: 7054392448
+      message: '❌ Paperless mail pipeline unavailable
+
+
+        {{ trigger.to_state.name }} has been {{ trigger.to_state.state }} for five
+        minutes. Keep physical mail and do not clear the pending-shred tray until
+        both services recover.'
+  mode: single
+- id: '1789903617200'
+  alias: Resolve - Paperless pipeline services recovered
+  description: Clear the pipeline outage warning when both Paperless-ngx and Samba
+    are running again.
+  triggers:
+  - platform: state
+    entity_id: binary_sensor.paperless_ngx_running
+    to: 'on'
+  - platform: state
+    entity_id: binary_sensor.samba_share_running
+    to: 'on'
+  conditions:
+  - condition: state
+    entity_id: binary_sensor.paperless_ngx_running
+    state: 'on'
+  - condition: state
+    entity_id: binary_sensor.samba_share_running
+    state: 'on'
+  actions:
+  - action: persistent_notification.dismiss
+    data:
+      notification_id: paperless_pipeline_service_down
+  - action: telegram_bot.send_message
+    data:
+      chat_id: 7054392448
+      message: '✅ Paperless mail pipeline recovered
+
+
+        Paperless-ngx and Samba are both running again.'
+  mode: single
+- id: '1789904405839'
+  alias: Paperless - Track consume started
+  description: Increment the local in-flight counter and start a 15-minute watchdog
+    when Paperless begins consuming a scanner PDF. Triggered only by the local Paperless
+    workflow webhook.
+  triggers:
+  - platform: webhook
+    webhook_id: 3b9d98f8-989d-4d0e-93f6-b9ad7aa683c1
+    allowed_methods:
+    - POST
+    local_only: true
+  actions:
+  - action: counter.increment
+    target:
+      entity_id: counter.paperless_ingests_in_flight
+  - action: timer.start
+    target:
+      entity_id: timer.paperless_ingest_watchdog
+    data:
+      duration: 00:15:00
+  mode: queued
+  max: 20
+- id: '1789904407140'
+  alias: Paperless - Track document added
+  description: Decrement the in-flight counter after Paperless successfully adds a
+    physical-mail document. Clear a failure warning only when all started ingests
+    have completed.
+  triggers:
+  - platform: webhook
+    webhook_id: f2de5a2c-7360-4387-9698-88ab679fcd74
+    allowed_methods:
+    - POST
+    local_only: true
+  actions:
+  - action: counter.decrement
+    target:
+      entity_id: counter.paperless_ingests_in_flight
+  - delay: 00:00:01
+  - if:
+    - condition: numeric_state
+      entity_id: counter.paperless_ingests_in_flight
+      below: 1
+    then:
+    - action: timer.cancel
+      target:
+        entity_id: timer.paperless_ingest_watchdog
+    - if:
+      - condition: state
+        entity_id: input_boolean.paperless_ingest_problem
+        state: 'on'
+      then:
+      - action: persistent_notification.dismiss
+        data:
+          notification_id: paperless_ingest_problem
+      - action: telegram_bot.send_message
+        data:
+          chat_id: 7054392448
+          message: '✅ Paperless ingestion recovered
+
+
+            All scanner PDFs that started consumption have now produced documents.'
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.paperless_ingest_problem
+  mode: queued
+  max: 20
+- id: '1789904408407'
+  alias: Alert - Paperless ingest did not finish
+  description: Warn Jane when a consume-folder PDF starts processing but no corresponding
+    Physical Mail document is added within 15 minutes. Preserve failed Paperless tasks
+    and source files for diagnosis.
+  triggers:
+  - platform: event
+    event_type: timer.finished
+    event_data:
+      entity_id: timer.paperless_ingest_watchdog
+  conditions:
+  - condition: numeric_state
+    entity_id: counter.paperless_ingests_in_flight
+    above: 0
+  actions:
+  - action: input_boolean.turn_on
+    target:
+      entity_id: input_boolean.paperless_ingest_problem
+  - action: persistent_notification.create
+    data:
+      notification_id: paperless_ingest_problem
+      title: Paperless ingestion did not finish
+      message: '{{ states(''counter.paperless_ingests_in_flight'') }} scanner PDF(s)
+        started consumption but did not produce a Paperless document within 15 minutes.
+        Keep the physical originals and do not clear the pending-shred tray. Inspect
+        Paperless Tasks and consume; do not dismiss or delete evidence automatically.'
+  - action: telegram_bot.send_message
+    data:
+      chat_id: 7054392448
+      message: '❌ Paperless ingestion did not finish
+
+
+        {{ states(''counter.paperless_ingests_in_flight'') }} scanner PDF(s) started
+        consumption but did not produce a document within 15 minutes. Keep the paper
+        and do not clear the pending-shred tray. Check Paperless Tasks and consume.'
+  mode: single
+- id: '1789904409678'
+  alias: Acknowledge - Paperless ingest problem
+  description: Manual recovery control after Jane has inspected and resolved or removed
+    the failed source. Resets tracking without deleting Paperless task evidence.
+  triggers:
+  - platform: state
+    entity_id: input_button.acknowledge_paperless_ingest_problem
+  actions:
+  - action: counter.reset
+    target:
+      entity_id: counter.paperless_ingests_in_flight
+  - action: timer.cancel
+    target:
+      entity_id: timer.paperless_ingest_watchdog
+  - action: input_boolean.turn_off
+    target:
+      entity_id: input_boolean.paperless_ingest_problem
+  - action: persistent_notification.dismiss
+    data:
+      notification_id: paperless_ingest_problem
+  mode: single
+- id: '1789904562655'
+  alias: Paperless - Resume ingest watchdog after restart
+  description: If Home Assistant restarts while Paperless still has unmatched consume-start
+    events, resume a five-minute watchdog so the failure cannot be forgotten.
+  triggers:
+  - platform: homeassistant
+    event: start
+  conditions:
+  - condition: numeric_state
+    entity_id: counter.paperless_ingests_in_flight
+    above: 0
+  actions:
+  - delay: 00:02:00
+  - action: timer.start
+    target:
+      entity_id: timer.paperless_ingest_watchdog
+    data:
+      duration: 00:05:00
+  mode: single

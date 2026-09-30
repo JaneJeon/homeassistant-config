@@ -29,3 +29,6 @@ www/community/
 # Local clutter.
 .DS_Store
 .vscode/
+
+# Brand icon cache HA downloads.
+.cache/

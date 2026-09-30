@@ -1,0 +1,56 @@
+{#
+  wind.jinja — Plant wind macros (v5.1)
+
+  Place in: config/custom_templates/wind.jinja
+
+  Both macros take the forecast array and current time as parameters.
+  Imported macros CANNOT access HA-specific functions (state_attr, now,
+  strptime, timedelta, as_timestamp, etc.) — all data must be passed in.
+
+  Uses entry-counting instead of datetime math: since the forecast is
+  hourly and sorted, counting the first `hours` entries after current_time
+  is equivalent to a time-window lookup.
+
+  Macros:
+    max_effective_wind(hourly, hours, current_time)
+    peak_wind_time(hourly, hours, current_time)
+
+  Caller example:
+    {% from 'wind.jinja' import max_effective_wind %}
+    {% set hourly = state_attr('sensor.wind_forecast', 'hourly') %}
+    {% set ct = now().strftime('%Y-%m-%d %H:%M') %}
+    {{ max_effective_wind(hourly, 9, ct) }}
+#}
+
+{% macro max_effective_wind(hourly, hours, current_time) %}
+  {%- set ns = namespace(max_eff=0.0, count=0) -%}
+  {%- set h = hours | int(3) -%}
+  {%- if hourly is not none -%}
+    {%- for entry in hourly -%}
+      {%- if entry.time >= current_time and ns.count < h -%}
+        {%- set ns.count = ns.count + 1 -%}
+        {%- if entry.eff_speed | float(0) > ns.max_eff -%}
+          {%- set ns.max_eff = entry.eff_speed | float(0) -%}
+        {%- endif -%}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+  {{ ns.max_eff }}
+{%- endmacro %}
+
+{% macro peak_wind_time(hourly, hours, current_time) %}
+  {%- set ns = namespace(max_eff=0.0, peak='—', count=0) -%}
+  {%- set h = hours | int(3) -%}
+  {%- if hourly is not none -%}
+    {%- for entry in hourly -%}
+      {%- if entry.time >= current_time and ns.count < h -%}
+        {%- set ns.count = ns.count + 1 -%}
+        {%- if entry.eff_speed | float(0) > ns.max_eff -%}
+          {%- set ns.max_eff = entry.eff_speed | float(0) -%}
+          {%- set ns.peak = entry.time[-5:] -%}
+        {%- endif -%}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+  {{ ns.peak }}
+{%- endmacro %}

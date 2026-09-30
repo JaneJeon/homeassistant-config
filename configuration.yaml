@@ -1,0 +1,40 @@
+default_config:
+
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
+template: !include template_wind_sensors.yaml
+
+system_log:
+  fire_event: true
+
+shell_command:
+  bzbgear_input_1: "/bin/sh /config/scripts/bzbgear.sh 'set input 1'"
+  bzbgear_input_2: "/bin/sh /config/scripts/bzbgear.sh 'set input 2'"
+  bzbgear_autoswitch_off: "/bin/sh /config/scripts/bzbgear.sh 'set autoswitch off'"
+  bzbgear_get_input: "/bin/sh /config/scripts/bzbgear.sh 'get input'"
+
+rest_command:
+  push_forecast_to_vm:
+    url: "http://1bd4a9fb-victoria-metrics:8428/api/v1/import"
+    method: POST
+    payload: '{% set hourly = state_attr("sensor.wind_forecast", "hourly") %}{% set ns = namespace(lines=[]) %}{% for entry in hourly %}{% set ts = (as_timestamp(strptime(entry.time, "%Y-%m-%d %H:%M")) * 1000) | int %}{% set ns.lines = ns.lines + ["{\"metric\":{\"__name__\":\"wind_forecast_eff_speed\",\"source\":\"openweathermap\",\"job\":\"wind-forecast\"},\"values\":[" ~ entry.eff_speed ~ "],\"timestamps\":[" ~ ts ~ "]}", "{\"metric\":{\"__name__\":\"wind_forecast_bearing\",\"source\":\"openweathermap\",\"job\":\"wind-forecast\"},\"values\":[" ~ entry.bearing ~ "],\"timestamps\":[" ~ ts ~ "]}"] %}{% endfor %}{{ ns.lines | join("\n") }}'
+
+prometheus:
+  filter:
+    include_domains:
+      - sensor
+      - binary_sensor
+      - weather
+    exclude_entity_globs:
+      # HA internals
+      - sensor.sun_*
+      # Companion app devices
+      - sensor.macbook_pro_*
+      # - sensor.janes_iphone_* # actually the location tracking might be useful for checking how often I go out, what my time spend is
+      - binary_sensor.macbook_pro_*
+      # Non-device sensors
+      - binary_sensor.workday_*
+      - binary_sensor.plant_wind_danger_*
+      - sensor.zigbee2mqtt_bridge_*
+      - binary_sensor.zigbee2mqtt_bridge_*

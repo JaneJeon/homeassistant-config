@@ -1,0 +1,23 @@
+hdmi_switch_to_input_1:
+  alias: HDMI - Switch to Input 1
+  sequence:
+  - action: shell_command.bzbgear_input_1
+    response_variable: result
+  - if:
+    - condition: template
+      value_template: '{{ result.returncode != 0 }}'
+    then:
+    - stop: 'BZBGear failed to switch to input 1. Got: {{ result.stdout }}'
+      error: true
+hdmi_switch_to_input_2:
+  sequence:
+  - action: shell_command.bzbgear_input_2
+    response_variable: result
+  - if:
+    - condition: template
+      value_template: '{{ result.returncode != 0 }}'
+    then:
+    - stop: 'BZBGear failed to switch to input 2. Got: {{ result.stdout }}'
+      error: true
+  alias: HDMI - Switch to Input 2
+  description: ''

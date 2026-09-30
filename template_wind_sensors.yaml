@@ -1,0 +1,48 @@
+# template_wind_sensors.yaml — Wind forecast + plant recommendation (v5.1)
+#
+# Block 1: Trigger-based sensor that fetches OWM hourly forecast, applies
+#           cosine projection, and stores the full 48h array.
+# Block 2: Non-trigger recommendation sensor that reads Block 1 and outputs
+#           a tri-state recommendation (outside/balcony/inside).
+#
+# Included from configuration.yaml via:
+#   template: !include template_wind_sensors.yaml
+
+# ═══════════════════════════════════════════════════════════════════════
+# Block 1 — Trigger-based: fetch OWM forecast hourly, compute cosine projection
+# ═══════════════════════════════════════════════════════════════════════
+- trigger:
+    - trigger: time_pattern
+      hours: "/1"
+    - trigger: homeassistant
+      event: start
+    - trigger: event
+      event_type: event_template_reloaded
+  action:
+    - action: weather.get_forecasts
+      data:
+        type: hourly
+      target:
+        entity_id: weather.openweathermap
+      response_variable: forecast
+
+  sensor:
+    - name: "Wind Forecast"
+      unique_id: wind_forecast_snapshot
+      icon: mdi:weather-windy
+      state: "{{ now().strftime('%Y-%m-%d %H:%M') }}"
+      attributes:
+        source: weather.openweathermap
+        corridor_perpendicular: 67.5
+        total_hours: "{{ forecast['weather.openweathermap'].forecast | length }}"
+        hourly: >-
+          {% set ns = namespace(result=[]) %}
+          {% for fc in forecast['weather.openweathermap'].forecast %}
+            {% set speed = fc.wind_speed | float(0) %}
+            {% set bearing = fc.wind_bearing | float(0) %}
+            {% set cos_val = cos((bearing - 67.5) / 180 * pi) | abs | round(2) %}
+            {% set eff = (speed * cos_val) | round(1) %}
+            {% set t = as_timestamp(fc.datetime) | timestamp_custom('%Y-%m-%d %H:%M', true) %}
+            {% set ns.result = ns.result + [{'time': t, 'raw_speed': speed, 'bearing': bearing | int, 'cos_factor': cos_val, 'eff_speed': eff}] %}
+          {% endfor %}
+          {{ ns.result }}

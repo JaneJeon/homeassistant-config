@@ -1,0 +1,23 @@
+- id: '1782552008565'
+  name: Lights On
+  entities:
+    light.living_room_living_room_light_front_corner:
+      state: 'on'
+      brightness: 255
+    light.living_room_living_room_light_back_corner:
+      state: 'on'
+      brightness: 255
+    light.ikea_smart_light_bulb_upper:
+      state: 'on'
+      brightness: 255
+  icon: mdi:lightbulb-group
+- id: '1782552016435'
+  name: Lights Off
+  entities:
+    light.living_room_living_room_light_front_corner:
+      state: 'off'
+    light.living_room_living_room_light_back_corner:
+      state: 'off'
+    light.ikea_smart_light_bulb_upper:
+      state: 'off'
+  icon: mdi:lightbulb-group-off
