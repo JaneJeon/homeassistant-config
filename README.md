@@ -19,6 +19,10 @@ Not tracked, because Home Assistant keeps them in its internal `.storage` folder
 1. Change files on a branch, open a pull request.
 2. GitHub runs Home Assistant's own config check (`.github/workflows/check.yaml`), at the version in `.HA_VERSION`.
 3. Merge to `main`.
-4. Deploy: the Git pull app on the Green pulls `main`, then HA reloads its YAML (`homeassistant.reload_all`). No restart.
+4. Deploy: run `script.deploy_config` (in `packages/config_as_code.yaml`). It starts the Git pull app, which pulls `main`, then HA reloads its YAML (`homeassistant.reload_all`). No restart.
 
-The deploy step is being set up. Until it exists, nothing here is deployed automatically.
+Deploys are not automatic yet. Run the script after merging.
+
+## Drift
+
+`sensor.config_repo_drift` counts files on the Green that differ from this repo. If it stays above zero for 30 minutes, a Telegram alert fires: something was edited outside git.

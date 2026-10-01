@@ -13,6 +13,8 @@ jobs:
 
       # Runs Home Assistant's own config check, in the official image,
       # at the same version the Green runs (.HA_VERSION is written by HA).
+      # --fail-on-warnings matters: without it, invalid integration config
+      # (for example a bad option in a package) still exits 0.
       - name: Home Assistant config check
         if: hashFiles('configuration.yaml') != ''
         run: |
@@ -21,4 +23,4 @@ jobs:
           docker run --rm --entrypoint "" \
             -v "$PWD:/config" -w /config \
             "ghcr.io/home-assistant/home-assistant:${version}" \
-            python -m homeassistant --config /config --script check_config
+            python -m homeassistant --config /config --script check_config --fail-on-warnings

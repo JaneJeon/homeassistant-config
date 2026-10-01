@@ -1,0 +1,51 @@
+# Plumbing for running this config from git.
+# Deploy: pull main with the Git pull app, then reload YAML. No restart.
+# Drift: count files on the Green that differ from the repo, and alert if it stays above zero.
+
+script:
+  deploy_config:
+    alias: Deploy config from GitHub
+    description: >-
+      Pulls main from GitHub with the Git pull app, then reloads all YAML.
+      homeassistant.reload_all runs HA's config check first and refuses to
+      reload a broken config.
+    mode: single
+    icon: mdi:source-pull
+    sequence:
+      - action: hassio.app_start
+        data:
+          app: core_git_pull
+      # The app runs once and stops. A run takes about 5 seconds.
+      - delay: "00:00:30"
+      - action: homeassistant.reload_all
+
+command_line:
+  - sensor:
+      name: Config repo drift
+      unique_id: config_repo_drift
+      # Tracked files changed on the Green plus untracked files that are not gitignored.
+      command: "git -C /config status --porcelain | wc -l"
+      unit_of_measurement: files
+      scan_interval: 600
+
+automation:
+  - id: config_repo_drift_alert
+    alias: Config repo - drift alert
+    description: >-
+      Tells Jane when the config on the Green has differed from the GitHub repo
+      for 30 minutes, which means something was edited outside the repo.
+    mode: single
+    triggers:
+      - trigger: numeric_state
+        entity_id: sensor.config_repo_drift
+        above: 0
+        for: "00:30:00"
+    actions:
+      - action: notify.send_message
+        target:
+          entity_id: notify.telegram_bot_7842566738_7054392448
+        data:
+          title: Config drift
+          message: >-
+            {{ states('sensor.config_repo_drift') }} file(s) on the Green differ
+            from the homeassistant-config repo. Something was edited outside git.
