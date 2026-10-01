@@ -1,14 +1,16 @@
 # Plumbing for running this config from git.
-# Deploy: pull main with the Git pull app, then reload YAML. No restart.
+# Deploy: pull main with the Git pull app (script), then reload YAML (automation). No restart.
 # Drift: count files on the Green that differ from the repo, and alert if it stays above zero.
 
 script:
   deploy_config:
     alias: Deploy config from GitHub
     description: >-
-      Pulls main from GitHub with the Git pull app, then reloads all YAML.
-      homeassistant.reload_all runs HA's config check first and refuses to
-      reload a broken config.
+      Pulls main from GitHub with the Git pull app, then fires
+      config_as_code_pulled. The reload happens in the automation below, not
+      here: a script that runs homeassistant.reload_all gets replaced mid-run
+      when its own definition changed, which orphaned the old script entity on
+      2026-09-30.
     mode: single
     icon: mdi:source-pull
     sequence:
@@ -18,7 +20,7 @@ script:
       # The app runs once and stops. The pull takes seconds, but its own config
       # check took about 50 seconds on 2026-09-30. Wait past both.
       - delay: "00:01:30"
-      - action: homeassistant.reload_all
+      - event: config_as_code_pulled
 
 command_line:
   - sensor:
@@ -30,6 +32,18 @@ command_line:
       scan_interval: 600
 
 automation:
+  - id: config_as_code_reload_after_pull
+    alias: Config repo - reload after pull
+    description: >-
+      Reloads all YAML after script.deploy_config pulls. reload_all runs HA's
+      config check first and refuses to reload a broken config.
+    mode: single
+    triggers:
+      - trigger: event
+        event_type: config_as_code_pulled
+    actions:
+      - action: homeassistant.reload_all
+
   - id: config_repo_drift_alert
     alias: Config repo - drift alert
     description: >-
