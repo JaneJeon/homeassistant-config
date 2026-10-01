@@ -15,8 +15,9 @@ script:
       - action: hassio.app_start
         data:
           app: core_git_pull
-      # The app runs once and stops. A run takes about 5 seconds.
-      - delay: "00:00:30"
+      # The app runs once and stops. The pull takes seconds, but its own config
+      # check took about 50 seconds on 2026-09-30. Wait past both.
+      - delay: "00:01:30"
       - action: homeassistant.reload_all
 
 command_line:
