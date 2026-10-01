@@ -59,6 +59,10 @@ automation:
     actions:
       - action: homeassistant.reload_all
 
+  # Both alerts poll every 5 minutes instead of using state or template
+  # triggers with "for". Those only fire on a change from fine to broken, so a
+  # problem that already exists when HA starts or reloads would never alert.
+  # Polling also re-alerts every 12 hours while the problem lasts.
   - id: config_repo_drift_alert
     alias: Config repo - drift alert
     description: >-
@@ -66,10 +70,16 @@ automation:
       for 30 minutes, which means something was edited outside the repo.
     mode: single
     triggers:
-      - trigger: numeric_state
-        entity_id: sensor.config_repo_drift
-        above: 0
-        for: "00:30:00"
+      - trigger: time_pattern
+        minutes: "/5"
+    conditions:
+      - condition: template
+        value_template: >-
+          {% set s = states.sensor.config_repo_drift %}
+          {% set last = state_attr(this.entity_id, 'last_triggered') %}
+          {{ s is not none and s.state | int(0) > 0
+             and now() - s.last_changed > timedelta(minutes=30)
+             and (last is none or now() - last > timedelta(hours=12)) }}
     actions:
       - action: notify.send_message
         target:
@@ -87,12 +97,19 @@ automation:
       minutes, which means the Git pull app is failing or stopped.
     mode: single
     triggers:
-      - trigger: template
+      - trigger: time_pattern
+        minutes: "/5"
+    conditions:
+      - condition: template
         value_template: >-
-          {% set head = states('sensor.config_repo_head') %}
-          {% set gh = states('sensor.config_repo_github_master') %}
-          {{ head | length == 40 and gh | length == 40 and head != gh }}
-        for: "00:15:00"
+          {% set h = states.sensor.config_repo_head %}
+          {% set g = states.sensor.config_repo_github_master %}
+          {% set last = state_attr(this.entity_id, 'last_triggered') %}
+          {{ h is not none and g is not none
+             and h.state | length == 40 and g.state | length == 40
+             and h.state != g.state
+             and now() - ([h.last_changed, g.last_changed] | max) > timedelta(minutes=15)
+             and (last is none or now() - last > timedelta(hours=12)) }}
     actions:
       - action: notify.send_message
         target:

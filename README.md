@@ -48,3 +48,5 @@ Nothing in GitHub can reach the Green: no deploy secrets, no inbound webhook. Th
 
 - Drift: `sensor.config_repo_drift` counts files on the Green that differ from this repo. Above zero for 30 minutes sends a Telegram alert: something was edited outside git.
 - Behind: `sensor.config_repo_head` differing from `sensor.config_repo_github_master` for 15 minutes sends a Telegram alert: pulls are failing.
+
+Both check every 5 minutes and repeat every 12 hours while the problem lasts. They also catch a problem that already existed when HA started.
