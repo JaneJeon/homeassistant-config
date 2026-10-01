@@ -1068,106 +1068,102 @@
   mode: single
 - id: '1789904405839'
   alias: Paperless - Track consume started
-  description: Increment the local in-flight counter and start a 15-minute watchdog
+  description: Increment the local in-flight counter and start a 45-minute watchdog
     when Paperless begins consuming a scanner PDF. Triggered only by the local Paperless
-    workflow webhook.
+    workflow webhook. 45 minutes because OCR runs one page at a time on the Green
+    (PAPERLESS_THREADS_PER_WORKER=1, set 2026-09-30 after an out-of-memory kill) and
+    OCR speed is not a design constraint.
   triggers:
-  - platform: webhook
-    webhook_id: 3b9d98f8-989d-4d0e-93f6-b9ad7aa683c1
-    allowed_methods:
+  - allowed_methods:
     - POST
     local_only: true
+    platform: webhook
+    webhook_id: 3b9d98f8-989d-4d0e-93f6-b9ad7aa683c1
   actions:
   - action: counter.increment
     target:
       entity_id: counter.paperless_ingests_in_flight
   - action: timer.start
+    data:
+      duration: 00:45:00
     target:
       entity_id: timer.paperless_ingest_watchdog
-    data:
-      duration: 00:15:00
-  mode: queued
   max: 20
+  mode: queued
 - id: '1789904407140'
   alias: Paperless - Track document added
-  description: Decrement the in-flight counter after Paperless successfully adds a
-    physical-mail document. Clear a failure warning only when all started ingests
-    have completed.
+  description: 'Decrement the in-flight counter after Paperless adds a physical-mail
+    document, and stop the watchdog once nothing is in flight. It does NOT clear an
+    already-reported failure: the webhooks carry no filename, so a later good scan
+    cannot prove the failed one arrived. Jane (or an agent that has checked Paperless)
+    clears it with the Acknowledge button. Changed 2026-09-30 after a stale count
+    turned a successful scan into a false failure alert.'
   triggers:
-  - platform: webhook
-    webhook_id: f2de5a2c-7360-4387-9698-88ab679fcd74
-    allowed_methods:
+  - allowed_methods:
     - POST
     local_only: true
+    platform: webhook
+    webhook_id: f2de5a2c-7360-4387-9698-88ab679fcd74
   actions:
   - action: counter.decrement
     target:
       entity_id: counter.paperless_ingests_in_flight
   - delay: 00:00:01
   - if:
-    - condition: numeric_state
+    - below: 1
+      condition: numeric_state
       entity_id: counter.paperless_ingests_in_flight
-      below: 1
     then:
     - action: timer.cancel
       target:
         entity_id: timer.paperless_ingest_watchdog
-    - if:
-      - condition: state
-        entity_id: input_boolean.paperless_ingest_problem
-        state: 'on'
-      then:
-      - action: persistent_notification.dismiss
-        data:
-          notification_id: paperless_ingest_problem
-      - action: telegram_bot.send_message
-        data:
-          chat_id: 7054392448
-          message: '✅ Paperless ingestion recovered
-
-
-            All scanner PDFs that started consumption have now produced documents.'
-      - action: input_boolean.turn_off
-        target:
-          entity_id: input_boolean.paperless_ingest_problem
-  mode: queued
   max: 20
+  mode: queued
 - id: '1789904408407'
   alias: Alert - Paperless ingest did not finish
-  description: Warn Jane when a consume-folder PDF starts processing but no corresponding
-    Physical Mail document is added within 15 minutes. Preserve failed Paperless tasks
-    and source files for diagnosis.
+  description: Warn Jane when a consume-folder PDF starts processing but no Physical
+    Mail document is added within 45 minutes. After warning, hand the unfinished count
+    over to the persistent problem flag and reset the in-flight counter, so later
+    scans are judged on their own and cannot re-fire this alert for an old failure.
+    The flag and notification stay until the Acknowledge button is pressed. Preserve
+    failed Paperless tasks and source files for diagnosis.
   triggers:
-  - platform: event
-    event_type: timer.finished
-    event_data:
+  - event_data:
       entity_id: timer.paperless_ingest_watchdog
+    event_type: timer.finished
+    platform: event
   conditions:
-  - condition: numeric_state
+  - above: 0
+    condition: numeric_state
     entity_id: counter.paperless_ingests_in_flight
-    above: 0
   actions:
   - action: input_boolean.turn_on
     target:
       entity_id: input_boolean.paperless_ingest_problem
   - action: persistent_notification.create
     data:
+      message: '{{ stuck }} scanner PDF(s) started processing about 45 minutes before
+        {{ now().strftime(''%-I:%M %p on %b %-d'') }} and did not produce a Paperless
+        document. Keep the physical originals and do not clear the pending-shred tray.
+        Check Paperless Tasks and the consume folder, then press Acknowledge Paperless
+        ingest problem once the document is in Paperless.'
       notification_id: paperless_ingest_problem
       title: Paperless ingestion did not finish
-      message: '{{ states(''counter.paperless_ingests_in_flight'') }} scanner PDF(s)
-        started consumption but did not produce a Paperless document within 15 minutes.
-        Keep the physical originals and do not clear the pending-shred tray. Inspect
-        Paperless Tasks and consume; do not dismiss or delete evidence automatically.'
   - action: telegram_bot.send_message
     data:
       chat_id: 7054392448
       message: '❌ Paperless ingestion did not finish
 
 
-        {{ states(''counter.paperless_ingests_in_flight'') }} scanner PDF(s) started
-        consumption but did not produce a document within 15 minutes. Keep the paper
-        and do not clear the pending-shred tray. Check Paperless Tasks and consume.'
+        {{ stuck }} scanner PDF(s) started about 45 min ago and did not produce a
+        document. Keep the paper and do not clear the pending-shred tray. This warning
+        stays on until it is acknowledged.'
+  - action: counter.reset
+    target:
+      entity_id: counter.paperless_ingests_in_flight
   mode: single
+  variables:
+    stuck: '{{ states(''counter.paperless_ingests_in_flight'') | int(0) }}'
 - id: '1789904409678'
   alias: Acknowledge - Paperless ingest problem
   description: Manual recovery control after Jane has inspected and resolved or removed
@@ -1192,19 +1188,20 @@
 - id: '1789904562655'
   alias: Paperless - Resume ingest watchdog after restart
   description: If Home Assistant restarts while Paperless still has unmatched consume-start
-    events, resume a five-minute watchdog so the failure cannot be forgotten.
+    events, resume the watchdog so the failure cannot be forgotten. 45 minutes because
+    single-page-at-a-time OCR can legitimately still be running.
   triggers:
-  - platform: homeassistant
-    event: start
+  - event: start
+    platform: homeassistant
   conditions:
-  - condition: numeric_state
+  - above: 0
+    condition: numeric_state
     entity_id: counter.paperless_ingests_in_flight
-    above: 0
   actions:
   - delay: 00:02:00
   - action: timer.start
+    data:
+      duration: 00:45:00
     target:
       entity_id: timer.paperless_ingest_watchdog
-    data:
-      duration: 00:05:00
   mode: single
