@@ -1,6 +1,6 @@
 # Plumbing for running this config from git.
 #
-# Deploy is pull-based: the Git pull app polls GitHub every 2 minutes and
+# Deploy is pull-based: the Git pull app polls GitHub every 5 minutes and
 # fast-forwards /config. HA notices the checked-out commit change and reloads
 # all YAML. No restart, no inbound access, no deploy secrets in GitHub.
 #
@@ -12,7 +12,7 @@ script:
     alias: Deploy config from GitHub now
     description: >-
       Starts the Git pull app for an immediate pull instead of waiting for its
-      next 2-minute poll. The reload follows from the HEAD change.
+      next 5-minute poll. The reload follows from the HEAD change.
     mode: single
     icon: mdi:source-pull
     sequence:

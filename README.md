@@ -40,7 +40,7 @@ Not tracked, because Home Assistant keeps them in its internal `.storage` folder
 1. Change files on a branch, open a pull request.
 2. GitHub runs Home Assistant's own config check (`.github/workflows/check.yaml`), at the version in `.ha-version` (Renovate bumps it after each HA release).
 3. Merge to `master`.
-4. Deploy happens by itself. The Git pull app polls GitHub every 2 minutes and fast-forwards the Green. `sensor.config_repo_head` notices the new commit within a minute, and the automation `Config repo - reload on new commit` runs `homeassistant.reload_all`, which checks the config first and refuses a broken one. No restart. To skip the wait, run `script.deploy_config`.
+4. Deploy happens by itself. The Git pull app polls GitHub every 5 minutes and fast-forwards the Green. Its own config check adds about a minute. `sensor.config_repo_head` notices the new commit within a minute, and the automation `Config repo - reload on new commit` runs `homeassistant.reload_all`, which checks the config first and refuses a broken one. No restart. To skip the wait, run `script.deploy_config`.
 
 Nothing in GitHub can reach the Green: no deploy secrets, no inbound webhook. The Green only reaches out.
 
