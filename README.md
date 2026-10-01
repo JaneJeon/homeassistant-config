@@ -13,7 +13,7 @@ The Home Assistant config for the Green, as code. This repo is the source of tru
 Three layers, because no single one covers every way a commit reaches GitHub:
 
 1. Local hook (`.githooks/pre-commit`): gitleaks on the staged diff, then `tools/check-inline-secrets.py`. Enable once per clone with `git config core.hooksPath .githooks` (needs `brew install gitleaks`). Agents committing from their own sandboxes usually don't have it, so it is a convenience, not the guarantee.
-2. CI (`.github/workflows/secrets.yaml`): the same two checks on every push and pull request, gitleaks over the full history.
+2. CI (`.github/workflows/secret-scan.yaml`): the same two checks on every push and pull request, gitleaks over the full history.
 3. GitHub push protection (on by default for public repos): blocks known token formats server-side for every pusher, including agents.
 
 `tools/check-inline-secrets.py` is the HA-specific rule: any credential-shaped key (`password`, `token`, `api_key`, `Authorization`, ...) must be `!secret name`, never an inline value, and `secrets.yaml` is never committed. New secrets go into `secrets.yaml` on the Green by hand, plus a fake value in `secrets.fake.yaml`.
