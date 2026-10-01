@@ -35,3 +35,6 @@ www/community/
 
 # Node tooling for linting and hooks.
 node_modules/
+
+# Written by HA on every upgrade. CI uses .ha-version instead (Renovate bumps it).
+.HA_VERSION

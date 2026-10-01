@@ -1,4 +1,14 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>JaneJeon/dev//packages/renovate-config/default.json"]
+  "extends": ["github>JaneJeon/dev//packages/renovate-config/default.json"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Home Assistant version the config check runs against",
+      "managerFilePatterns": ["/^\\.ha-version$/"],
+      "matchStrings": ["^(?<currentValue>\\S+)\\s*$"],
+      "depNameTemplate": "ghcr.io/home-assistant/home-assistant",
+      "datasourceTemplate": "docker"
+    }
+  ]
 }

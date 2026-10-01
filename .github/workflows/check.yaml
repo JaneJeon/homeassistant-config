@@ -12,13 +12,13 @@ jobs:
       - uses: actions/checkout@v7
 
       # Runs Home Assistant's own config check, in the official image,
-      # at the same version the Green runs (.HA_VERSION is written by HA).
+      # at the version in .ha-version (Renovate bumps it after each HA release).
       # --fail-on-warnings matters: without it, invalid integration config
       # (for example a bad option in a package) still exits 0.
       - name: Home Assistant config check
         if: hashFiles('configuration.yaml') != ''
         run: |
-          version="$(tr -d '[:space:]' < .HA_VERSION)"
+          version="$(tr -d '[:space:]' < .ha-version)"
           cp secrets.fake.yaml secrets.yaml
           docker run --rm --entrypoint "" \
             -v "$PWD:/config" -w /config \
