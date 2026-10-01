@@ -1,26 +1,24 @@
 # Plumbing for running this config from git.
-# Deploy: pull main with the Git pull app (script), then reload YAML (automation). No restart.
-# Drift: count files on the Green that differ from the repo, and alert if it stays above zero.
+#
+# Deploy is pull-based: the Git pull app polls GitHub every 2 minutes and
+# fast-forwards /config. HA notices the checked-out commit change and reloads
+# all YAML. No restart, no inbound access, no deploy secrets in GitHub.
+#
+# Alerts: drift (files on the Green differ from the repo) and lag (the Green
+# is behind GitHub's master, so pulls are failing).
 
 script:
   deploy_config:
-    alias: Deploy config from GitHub
+    alias: Deploy config from GitHub now
     description: >-
-      Pulls main from GitHub with the Git pull app, then fires
-      config_as_code_pulled. The reload happens in the automation below, not
-      here: a script that runs homeassistant.reload_all gets replaced mid-run
-      when its own definition changed, which orphaned the old script entity on
-      2026-09-30.
+      Starts the Git pull app for an immediate pull instead of waiting for its
+      next 2-minute poll. The reload follows from the HEAD change.
     mode: single
     icon: mdi:source-pull
     sequence:
       - action: hassio.app_start
         data:
           app: core_git_pull
-      # The app runs once and stops. The pull takes seconds, but its own config
-      # check took about 50 seconds on 2026-09-30. Wait past both.
-      - delay: "00:01:30"
-      - event: config_as_code_pulled
 
 command_line:
   - sensor:
@@ -30,17 +28,34 @@ command_line:
       command: "git -C /config status --porcelain | wc -l"
       unit_of_measurement: files
       scan_interval: 600
+  - sensor:
+      name: Config repo HEAD
+      unique_id: config_repo_head
+      command: "git -C /config rev-parse HEAD"
+      scan_interval: 60
+  - sensor:
+      name: Config repo GitHub master
+      unique_id: config_repo_github_master
+      # Public repo, so no credentials. git ls-remote avoids the GitHub API rate limit.
+      command: "git ls-remote https://github.com/JaneJeon/homeassistant-config refs/heads/master | cut -c1-40"
+      scan_interval: 300
 
 automation:
-  - id: config_as_code_reload_after_pull
-    alias: Config repo - reload after pull
+  - id: config_as_code_reload_on_new_commit
+    alias: Config repo - reload on new commit
     description: >-
-      Reloads all YAML after script.deploy_config pulls. reload_all runs HA's
-      config check first and refuses to reload a broken config.
-    mode: single
+      Reloads all YAML when the commit checked out on the Green changes.
+      reload_all runs HA's config check first and refuses a broken config.
+    mode: queued
     triggers:
-      - trigger: event
-        event_type: config_as_code_pulled
+      - trigger: state
+        entity_id: sensor.config_repo_head
+    conditions:
+      - condition: template
+        value_template: >-
+          {{ trigger.from_state is not none
+             and trigger.from_state.state | length == 40
+             and trigger.to_state.state | length == 40 }}
     actions:
       - action: homeassistant.reload_all
 
@@ -64,3 +79,27 @@ automation:
           message: >-
             {{ states('sensor.config_repo_drift') }} file(s) on the Green differ
             from the homeassistant-config repo. Something was edited outside git.
+
+  - id: config_repo_lag_alert
+    alias: Config repo - behind GitHub alert
+    description: >-
+      Tells Jane when the Green has not caught up with GitHub's master for 15
+      minutes, which means the Git pull app is failing or stopped.
+    mode: single
+    triggers:
+      - trigger: template
+        value_template: >-
+          {% set head = states('sensor.config_repo_head') %}
+          {% set gh = states('sensor.config_repo_github_master') %}
+          {{ head | length == 40 and gh | length == 40 and head != gh }}
+        for: "00:15:00"
+    actions:
+      - action: notify.send_message
+        target:
+          entity_id: notify.telegram_bot_7842566738_7054392448
+        data:
+          title: Config deploy stuck
+          message: >-
+            The Green is on {{ states('sensor.config_repo_head')[:7] }} but
+            GitHub master is {{ states('sensor.config_repo_github_master')[:7] }}.
+            Check the Git pull app's log.

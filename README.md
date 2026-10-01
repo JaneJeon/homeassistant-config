@@ -40,11 +40,11 @@ Not tracked, because Home Assistant keeps them in its internal `.storage` folder
 1. Change files on a branch, open a pull request.
 2. GitHub runs Home Assistant's own config check (`.github/workflows/check.yaml`), at the version in `.HA_VERSION`.
 3. Merge to `master`.
-4. Deploy: run `script.deploy_config` (in `packages/config_as_code.yaml`). It starts the Git pull app, which pulls `master`, then fires `config_as_code_pulled`. The automation `Config repo - reload after pull` catches that and runs `homeassistant.reload_all`. No restart.
-   The reload lives in an automation on purpose: a script that reloads scripts can replace itself mid-run and orphan its own entity.
+4. Deploy happens by itself. The Git pull app polls GitHub every 2 minutes and fast-forwards the Green. `sensor.config_repo_head` notices the new commit within a minute, and the automation `Config repo - reload on new commit` runs `homeassistant.reload_all`, which checks the config first and refuses a broken one. No restart. To skip the wait, run `script.deploy_config`.
 
-Deploys are not automatic yet. Run the script after merging.
+Nothing in GitHub can reach the Green: no deploy secrets, no inbound webhook. The Green only reaches out.
 
-## Drift
+## Alerts
 
-`sensor.config_repo_drift` counts files on the Green that differ from this repo. If it stays above zero for 30 minutes, a Telegram alert fires: something was edited outside git.
+- Drift: `sensor.config_repo_drift` counts files on the Green that differ from this repo. Above zero for 30 minutes sends a Telegram alert: something was edited outside git.
+- Behind: `sensor.config_repo_head` differing from `sensor.config_repo_github_master` for 15 minutes sends a Telegram alert: pulls are failing.
