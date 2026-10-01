@@ -19,7 +19,8 @@ Not tracked, because Home Assistant keeps them in its internal `.storage` folder
 1. Change files on a branch, open a pull request.
 2. GitHub runs Home Assistant's own config check (`.github/workflows/check.yaml`), at the version in `.HA_VERSION`.
 3. Merge to `main`.
-4. Deploy: run `script.deploy_config` (in `packages/config_as_code.yaml`). It starts the Git pull app, which pulls `main`, then HA reloads its YAML (`homeassistant.reload_all`). No restart.
+4. Deploy: run `script.deploy_config` (in `packages/config_as_code.yaml`). It starts the Git pull app, which pulls `main`, then fires `config_as_code_pulled`. The automation `Config repo - reload after pull` catches that and runs `homeassistant.reload_all`. No restart.
+   The reload lives in an automation on purpose: a script that reloads scripts can replace itself mid-run and orphan its own entity.
 
 Deploys are not automatic yet. Run the script after merging.
 
