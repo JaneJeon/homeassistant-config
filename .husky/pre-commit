@@ -1,9 +1,4 @@
-#!/bin/sh
-# Secret guard, local layer. Enable once per clone:
-#   git config core.hooksPath .githooks
-# Needs gitleaks (brew install gitleaks) and python3.
-set -e
-cd "$(git rev-parse --show-toplevel)"
+npx lint-staged
 if ! command -v gitleaks >/dev/null 2>&1; then
   echo "pre-commit: gitleaks is not installed (brew install gitleaks). Refusing to commit." >&2
   exit 1

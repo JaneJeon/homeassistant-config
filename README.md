@@ -8,11 +8,22 @@ The Home Assistant config for the Green, as code. This repo is the source of tru
 - `master` is what should be live. Every change to `master` must pass the config check first.
 - Secrets never go in this repo. Real values live only in `secrets.yaml` on the Green. `secrets.fake.yaml` has the same keys with dummy values, for the check.
 
+## Local setup
+
+```
+nvm use && npm install   # installs prettier, lint-staged and the husky hooks
+brew install gitleaks    # the pre-commit hook refuses to run without it
+npm run lint             # prettier check + inline-secret check
+npm run format           # prettier write
+```
+
+Prettier skips `automations.yaml`, `scripts.yaml` and `scenes.yaml` because HA's UI rewrites them in its own style.
+
 ## Secret guard
 
 Three layers, because no single one covers every way a commit reaches GitHub:
 
-1. Local hook (`.githooks/pre-commit`): gitleaks on the staged diff, then `tools/check-inline-secrets.py`. Enable once per clone with `git config core.hooksPath .githooks` (needs `brew install gitleaks`). Agents committing from their own sandboxes usually don't have it, so it is a convenience, not the guarantee.
+1. Local hook (`.husky/pre-commit`): prettier on staged files, gitleaks on the staged diff, then `tools/check-inline-secrets.py`. Installed by `npm install` (needs `brew install gitleaks`). Agents committing from their own sandboxes may not have it, so it is a convenience, not the guarantee.
 2. CI (`.github/workflows/secret-scan.yaml`): the same two checks on every push and pull request, gitleaks over the full history.
 3. GitHub push protection (on by default for public repos): blocks known token formats server-side for every pusher, including agents.
 

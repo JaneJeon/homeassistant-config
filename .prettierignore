@@ -1,0 +1,8 @@
+# Written by Home Assistant's UI editors. Reformatting them would make every UI
+# save look like drift, and HA would rewrite them in its own style anyway.
+automations.yaml
+scripts.yaml
+scenes.yaml
+# Shipped by Home Assistant.
+blueprints/
+package-lock.json

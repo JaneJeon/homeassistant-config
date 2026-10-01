@@ -32,3 +32,6 @@ www/community/
 
 # Brand icon cache HA downloads.
 .cache/
+
+# Node tooling for linting and hooks.
+node_modules/

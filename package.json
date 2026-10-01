@@ -1,0 +1,17 @@
+{
+  "private": true,
+  "scripts": {
+    "lint": "run-s lint:*",
+    "lint:prettier": "prettier --check .",
+    "lint:secrets": "python3 tools/check-inline-secrets.py",
+    "format": "run-s format:*",
+    "format:prettier": "prettier --ignore-unknown --write .",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^16.0.0",
+    "npm-run-all2": "^9.0.0",
+    "prettier": "^3.5.3"
+  }
+}
