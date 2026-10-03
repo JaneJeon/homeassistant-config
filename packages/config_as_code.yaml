@@ -120,3 +120,57 @@ automation:
             The Green is on {{ states('sensor.config_repo_head')[:7] }} but
             GitHub master is {{ states('sensor.config_repo_github_master')[:7] }}.
             Check the Git pull app's log.
+
+  # The Git pull app exits when a fetch fails (for example a short DNS outage).
+  # The Supervisor watchdog restarts it a few times within a minute, then gives
+  # up and leaves it in an error state. Without this, deploys stop silently, and
+  # the lag alert only notices once a new commit lands on GitHub.
+  # binary_sensor.git_pull_running is disabled by default; it was enabled by hand
+  # in Settings > Entities (entity settings live in .storage, not in this repo).
+  - id: config_repo_git_pull_watchdog
+    alias: Config repo - keep Git pull running
+    description: >-
+      Starts the Git pull app again when it has been stopped for 5 minutes.
+    mode: single
+    triggers:
+      - trigger: time_pattern
+        minutes: "/5"
+    conditions:
+      - condition: template
+        value_template: >-
+          {% set s = states.binary_sensor.git_pull_running %}
+          {{ s is not none and s.state == 'off'
+             and now() - s.last_changed > timedelta(minutes=5) }}
+    actions:
+      - action: hassio.app_start
+        continue_on_error: true
+        data:
+          app: core_git_pull
+
+  - id: config_repo_git_pull_down_alert
+    alias: Config repo - Git pull down alert
+    description: >-
+      Tells Jane when the Git pull app has stayed stopped for 30 minutes, which
+      means the automatic restarts are not working.
+    mode: single
+    triggers:
+      - trigger: time_pattern
+        minutes: "/5"
+    conditions:
+      - condition: template
+        value_template: >-
+          {% set s = states.binary_sensor.git_pull_running %}
+          {% set last = state_attr(this.entity_id, 'last_triggered') %}
+          {{ s is not none and s.state == 'off'
+             and now() - s.last_changed > timedelta(minutes=30)
+             and (last is none or now() - last > timedelta(hours=12)) }}
+    actions:
+      - action: notify.send_message
+        target:
+          entity_id: notify.telegram_bot_7842566738_7054392448
+        data:
+          title: Config deploys stopped
+          message: >-
+            The Git pull app has been stopped for over 30 minutes and restarting
+            it isn't working. Changes merged to GitHub won't reach the Green.
+            Check the app's log.
