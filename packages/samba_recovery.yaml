@@ -1,0 +1,40 @@
+# Samba can report running after an outage while its IPv4 listener is absent.
+# Probe the scanner's destination, rather than trusting container state alone.
+command_line:
+  - binary_sensor:
+      name: Samba IPv4 listener
+      unique_id: samba_ipv4_listener
+      device_class: connectivity
+      command: "python3 /config/scripts/check_tcp_port.py 10.0.0.11 445"
+      payload_on: "ON"
+      payload_off: "OFF"
+      scan_interval: 30
+      command_timeout: 5
+
+automation:
+  - id: samba_recover_missing_ipv4_listener
+    alias: Samba - recover missing IPv4 listener
+    description: >-
+      Restart only Samba when its app is running but the scanner's IPv4 port
+      has been closed for two minutes. Polling catches failures already present
+      at startup or reload. Limit attempts to once every five minutes.
+    mode: single
+    triggers:
+      - trigger: time_pattern
+        minutes: "/1"
+    conditions:
+      - condition: state
+        entity_id: binary_sensor.samba_share_running
+        state: "on"
+      - condition: state
+        entity_id: binary_sensor.samba_ipv4_listener
+        state: "off"
+        for: "00:02:00"
+      - condition: template
+        value_template: >-
+          {% set last = state_attr(this.entity_id, 'last_triggered') %}
+          {{ last is none or now() - last > timedelta(minutes=5) }}
+    actions:
+      - action: hassio.app_restart
+        data:
+          app: core_samba
