@@ -52,6 +52,11 @@
     domain: device_tracker
     entity_id: c5853ef7a223b3b1d69c7b72905ed260
     type: is_not_home
+  - condition: device
+    device_id: 0e60e9914abe1c8cbf69b197e1ec50ce
+    domain: device_tracker
+    entity_id: 8f1a5596bb1403772e91ae85a87f6132
+    type: is_not_home
   actions:
   - action: telegram_bot.send_message
     metadata: {}
@@ -263,6 +268,11 @@
     device_id: ba991f4a75a7a6b48d8d25f81c307477
     domain: device_tracker
     entity_id: c5853ef7a223b3b1d69c7b72905ed260
+    type: is_not_home
+  - condition: device
+    device_id: 0e60e9914abe1c8cbf69b197e1ec50ce
+    domain: device_tracker
+    entity_id: 8f1a5596bb1403772e91ae85a87f6132
     type: is_not_home
   actions:
   - action: telegram_bot.send_message
