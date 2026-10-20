@@ -1,0 +1,87 @@
+# Internet health: continuous packet loss, and a "degraded" signal for
+# triggering a gateway restart.
+#
+# Source: the Ping (ICMP) integration, set up in the UI (it has no YAML),
+# one entry per target, 30 pings per check, a check about once a minute:
+#   binary_sensor.ping_gateway / sensor.ping_gateway_packet_loss       10.0.0.1, the Xfinity gateway (local hop)
+#   binary_sensor.ping_google_dns / sensor.ping_google_dns_packet_loss  8.8.8.8
+#   binary_sensor.ping_cloudflare_dns / ...                             1.1.1.1
+#
+# Why the extra layer: when every ping in a check fails, the Ping integration
+# makes its packet-loss sensor "unavailable" and turns the binary sensor off,
+# instead of reporting 100%. A total outage would then show up as a gap in
+# Grafana, and the statistics below would ignore it. The "Packet loss - X"
+# sensors turn that case back into 100%.
+#
+# They re-render every minute (a time trigger) on purpose. A trigger-based
+# template writes its state on every trigger, so a steady value still produces
+# a fresh sample for the 10-minute statistics. A state-based template would
+# go quiet on a steady value, and the statistics window would empty out.
+
+template:
+  - triggers:
+      - trigger: time_pattern
+        minutes: "/1"
+    sensor:
+      - name: Packet loss - Gateway
+        unique_id: packet_loss_gateway
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:router-network
+        availability: "{{ states('binary_sensor.ping_gateway') in ['on', 'off'] }}"
+        state: >-
+          {{ 100 if is_state('binary_sensor.ping_gateway', 'off')
+             else states('sensor.ping_gateway_packet_loss') | float(none) }}
+      - name: Packet loss - Google DNS
+        unique_id: packet_loss_google_dns
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:web
+        availability: "{{ states('binary_sensor.ping_google_dns') in ['on', 'off'] }}"
+        state: >-
+          {{ 100 if is_state('binary_sensor.ping_google_dns', 'off')
+             else states('sensor.ping_google_dns_packet_loss') | float(none) }}
+      - name: Packet loss - Cloudflare DNS
+        unique_id: packet_loss_cloudflare_dns
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:web
+        availability: "{{ states('binary_sensor.ping_cloudflare_dns') in ['on', 'off'] }}"
+        state: >-
+          {{ 100 if is_state('binary_sensor.ping_cloudflare_dns', 'off')
+             else states('sensor.ping_cloudflare_dns_packet_loss') | float(none) }}
+
+  # On when BOTH outside targets averaged at least 20% loss over the last
+  # 10 minutes. Two unrelated targets, so one provider throttling ICMP cannot
+  # trigger it. Normal is 0-1%. 20% over 10 minutes means roughly two minutes
+  # of total loss, or a sustained trickle like 2026-10-19's ~50%.
+  - binary_sensor:
+      - name: Internet degraded
+        unique_id: internet_degraded
+        device_class: problem
+        availability: >-
+          {{ has_value('sensor.packet_loss_google_dns_10_min')
+             and has_value('sensor.packet_loss_cloudflare_dns_10_min') }}
+        state: >-
+          {{ [states('sensor.packet_loss_google_dns_10_min') | float(0),
+              states('sensor.packet_loss_cloudflare_dns_10_min') | float(0)] | min >= 20 }}
+
+sensor:
+  - platform: statistics
+    name: Packet loss - Google DNS 10 min
+    unique_id: packet_loss_google_dns_10_min
+    entity_id: sensor.packet_loss_google_dns
+    state_characteristic: mean
+    max_age:
+      minutes: 10
+    sampling_size: 30
+    precision: 1
+  - platform: statistics
+    name: Packet loss - Cloudflare DNS 10 min
+    unique_id: packet_loss_cloudflare_dns_10_min
+    entity_id: sensor.packet_loss_cloudflare_dns
+    state_characteristic: mean
+    max_age:
+      minutes: 10
+    sampling_size: 30
+    precision: 1
