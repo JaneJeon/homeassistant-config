@@ -1,0 +1,16 @@
+# Boot time of the HA Green as a number Grafana can use.
+#
+# The System Monitor integration reports boot time with the "uptime" device
+# class. HA's Prometheus exporter only turns the "timestamp" device class into
+# a number (homeassistant_sensor_timestamp_seconds), so the boot time never
+# reached VictoriaMetrics and the Uptime stat on the Grafana System dashboard
+# showed N/A. This copies the same value into a timestamp sensor.
+
+template:
+  - sensor:
+      - name: HA Green last boot
+        unique_id: ha_green_last_boot
+        device_class: timestamp
+        icon: mdi:restart
+        availability: "{{ has_value('sensor.system_monitor_last_boot') }}"
+        state: "{{ states('sensor.system_monitor_last_boot') }}"
