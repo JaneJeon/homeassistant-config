@@ -62,7 +62,7 @@ template:
   # nearly stops, and it is an early warning of worse to come. With 30 pings
   # a minute, 3% over 10 minutes is about 9 lost pings out of 300 per target.
   # This is the phone's Internet tile. Nothing acts on it automatically.
-  # (It was 20% until 2026-10-24, an agent's pick for a restart trigger that
+  # (It was 20% until 2026-10-23, an agent's pick for a restart trigger that
   # was never built.)
   - binary_sensor:
       - name: Internet degraded
