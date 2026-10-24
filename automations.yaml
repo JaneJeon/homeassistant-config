@@ -1049,7 +1049,10 @@
 - id: '1789903617200'
   alias: Resolve - Paperless pipeline services recovered
   description: Clear the pipeline outage warning when both Paperless-ngx and Samba
-    are running again.
+    are running again. Only after the outage warning actually went out, so a one-second
+    blip (Home Assistant briefly reloading its Supervisor connection, which makes every
+    app's Running sensor go unavailable and back) does not send a "recovered" message
+    for an outage nobody was told about.
   triggers:
   - platform: state
     entity_id: binary_sensor.paperless_ngx_running
@@ -1064,6 +1067,11 @@
   - condition: state
     entity_id: binary_sensor.samba_share_running
     state: 'on'
+  - condition: template
+    value_template: >-
+      {% set warned = as_timestamp(state_attr('automation.alert_paperless_pipeline_service_down', 'last_triggered'), 0) %}
+      {% set said_recovered = as_timestamp(this.attributes.last_triggered, 0) %}
+      {{ warned > said_recovered }}
   actions:
   - action: persistent_notification.dismiss
     data:
