@@ -65,47 +65,6 @@
       entity_id:
       - notify.telegram_bot_7842566738_7054392448
   mode: single
-- id: '1752373518343'
-  alias: Automatically turn off desk light
-  description: ''
-  triggers:
-  - type: not_occupied
-    device_id: c6117d5cd885cb359a4547afac8d7372
-    entity_id: b79ea713d6d39c411efe922398b96917
-    domain: binary_sensor
-    trigger: device
-  conditions: []
-  actions:
-  - type: turn_off
-    device_id: ce67076131114d8783393e90dc026b08
-    entity_id: 8cf912a9d4ca21a485721a908d02bf9b
-    domain: switch
-  mode: single
-- id: '1752374572304'
-  alias: Automatically turn on desk light
-  description: ''
-  triggers:
-  - type: occupied
-    device_id: c6117d5cd885cb359a4547afac8d7372
-    entity_id: b79ea713d6d39c411efe922398b96917
-    domain: binary_sensor
-    trigger: device
-  conditions:
-  - condition: time
-    before: 00:00:00
-    after: 08:00:00
-  - type: is_not_occupied
-    condition: device
-    device_id: 6916206b6d85e171b2ce2df0e522a12f
-    entity_id: f6777078dc960bd5db2afc38107da35b
-    domain: binary_sensor
-    enabled: false
-  actions:
-  - type: turn_on
-    device_id: ce67076131114d8783393e90dc026b08
-    entity_id: 8cf912a9d4ca21a485721a908d02bf9b
-    domain: switch
-  mode: single
 - id: '1752713452048'
   alias: Turn on the lights when I get home
   description: ''
@@ -240,19 +199,6 @@
     device_id: ec5df59a5b5cacada7df472aca0f162b
     entity_id: 2bdffc80ddd7f15c20d3e3f93dd99f62
     domain: light
-  mode: single
-- id: '1753169649391'
-  alias: Automatically turn on the internet in the morning
-  description: ''
-  triggers:
-  - trigger: time
-    at: 07:00:00
-  conditions: []
-  actions:
-  - type: turn_on
-    device_id: 76afa219b5fc8a4fa8532ff080ea91f9
-    entity_id: 2d1fd84fffe1c06db4587c9f5c952a99
-    domain: switch
   mode: single
 - id: '1775010151666'
   alias: Intrusion Alert - Front Door
