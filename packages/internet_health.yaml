@@ -1,5 +1,10 @@
-# Internet health: continuous packet loss, and a "degraded" signal for
-# triggering a gateway restart.
+# Internet health: continuous packet loss, and an early-warning "degraded"
+# signal shown as the phone's Internet tile.
+#
+# A finer instrument also runs: the XB3 Telemetry app (homeassistant-apps)
+# probes the same three targets once a second and writes straight to
+# VictoriaMetrics, next to the modem's line errors. It is not in Home
+# Assistant. Grafana's System dashboard shows both.
 #
 # Source: the Ping (ICMP) integration, set up in the UI (it has no YAML),
 # one entry per target, 30 pings per check, a check about once a minute:
@@ -51,10 +56,14 @@ template:
           {{ 100 if is_state('binary_sensor.ping_cloudflare_dns', 'off')
              else states('sensor.ping_cloudflare_dns_packet_loss') | float(none) }}
 
-  # On when BOTH outside targets averaged at least 20% loss over the last
+  # On when BOTH outside targets averaged at least 3% loss over the last
   # 10 minutes. Two unrelated targets, so one provider throttling ICMP cannot
-  # trigger it. Normal is 0-1%. 20% over 10 minutes means roughly two minutes
-  # of total loss, or a sustained trickle like 2026-10-19's ~50%.
+  # trigger it. 3% is Jane's line: at that level ordinary browsing already
+  # nearly stops, and it is an early warning of worse to come. With 30 pings
+  # a minute, 3% over 10 minutes is about 9 lost pings out of 300 per target.
+  # This is the phone's Internet tile. Nothing acts on it automatically.
+  # (It was 20% until 2026-10-24, an agent's pick for a restart trigger that
+  # was never built.)
   - binary_sensor:
       - name: Internet degraded
         unique_id: internet_degraded
@@ -64,7 +73,7 @@ template:
              and has_value('sensor.packet_loss_cloudflare_dns_10_min') }}
         state: >-
           {{ [states('sensor.packet_loss_google_dns_10_min') | float(0),
-              states('sensor.packet_loss_cloudflare_dns_10_min') | float(0)] | min >= 20 }}
+              states('sensor.packet_loss_cloudflare_dns_10_min') | float(0)] | min >= 3 }}
 
 sensor:
   - platform: statistics
