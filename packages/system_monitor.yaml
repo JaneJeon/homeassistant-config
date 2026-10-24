@@ -1,12 +1,11 @@
-# Boot time of the HA Green as a number Grafana can use.
-#
-# The System Monitor integration reports boot time with the "uptime" device
-# class. HA's Prometheus exporter only turns the "timestamp" device class into
-# a number (homeassistant_sensor_timestamp_seconds), so the boot time never
-# reached VictoriaMetrics and the Uptime stat on the Grafana System dashboard
-# showed N/A. This copies the same value into a timestamp sensor.
+# The HA Green box: boot time for Grafana, and a warning before memory runs out.
 
 template:
+  # The System Monitor integration reports boot time with the "uptime" device
+  # class. HA's Prometheus exporter only turns the "timestamp" device class into
+  # a number (homeassistant_sensor_timestamp_seconds), so the boot time never
+  # reached VictoriaMetrics and the Uptime stat on the Grafana System dashboard
+  # showed N/A. This copies the same value into a timestamp sensor.
   - sensor:
       - name: HA Green last boot
         unique_id: ha_green_last_boot
@@ -14,3 +13,49 @@ template:
         icon: mdi:restart
         availability: "{{ has_value('sensor.system_monitor_last_boot') }}"
         state: "{{ states('sensor.system_monitor_last_boot') }}"
+
+automation:
+  # "Nearly out" is under 300 MiB of RAM available, the same line as the phone's
+  # memory gauge and the Grafana System dashboard. On 2026-10-23 at 22:46 the
+  # kernel killed Grafana with about 205 MiB left, minutes after dropping below
+  # 300, so this fires on the first reading under the line, with no wait. Swap
+  # has been full since about 2026-09-28, so RAM available is what matters.
+  # The 5-minute check also catches a Green that is already low when HA starts.
+  - id: green_memory_nearly_out_alert
+    alias: HA Green - memory nearly out alert
+    description: >-
+      Tells Jane when the HA Green has under 300 MiB of memory left, with the
+      apps using the most. Repeats at most once an hour.
+    mode: single
+    triggers:
+      - trigger: numeric_state
+        entity_id: sensor.system_monitor_memory_free
+        below: 300
+      - trigger: time_pattern
+        minutes: "/5"
+    conditions:
+      - condition: template
+        value_template: >-
+          {% set last = state_attr(this.entity_id, 'last_triggered') %}
+          {{ states('sensor.system_monitor_memory_free') | is_number
+             and states('sensor.system_monitor_memory_free') | float < 300
+             and (last is none or now() - last > timedelta(hours=1)) }}
+    actions:
+      - action: notify.send_message
+        target:
+          entity_id: notify.telegram_bot_7842566738_7054392448
+        data:
+          title: HA Green memory nearly out
+          message: >-
+            {% set free = states('sensor.system_monitor_memory_free') | float(0) %}
+            {% set total = free + states('sensor.system_monitor_memory_use') | float(0) %}
+            {% set ns = namespace(apps=[]) %}
+            {% for s in states.sensor
+                 if s.entity_id is search('_memory_percent') and s.state | is_number %}
+              {% set ns.apps = ns.apps + [(s.state | float, s.name | replace(' Memory percent', ''))] %}
+            {% endfor %}
+            {{ free | round(0) | int }} MiB of memory left. On 2026-10-23 the Green
+            killed Grafana with about 205 MiB left. Using the most:
+            {% for pct, name in (ns.apps | sort(reverse=true))[:3] -%}
+            {{ name }} {{ (pct * total / 100) | round(0) | int }} MiB{{ ', ' if not loop.last else '.' }}
+            {%- endfor %}

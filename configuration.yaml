@@ -39,5 +39,6 @@ prometheus:
       # Non-device sensors
       - binary_sensor.workday_*
       - binary_sensor.plant_wind_danger_*
+      # Zigbee2MQTT's bridge version and similar text. Its binary sensors are
+      # exported, so Grafana can show when the Zigbee bridge was disconnected.
       - sensor.zigbee2mqtt_bridge_*
-      - binary_sensor.zigbee2mqtt_bridge_*
