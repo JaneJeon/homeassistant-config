@@ -1,0 +1,8 @@
+{
+  "domain": "core_stall_watchdog",
+  "name": "Core Stall Watchdog",
+  "version": "0.1.0",
+  "documentation": "https://github.com/JaneJeon/homeassistant-config/tree/master/custom_components/core_stall_watchdog",
+  "codeowners": [],
+  "integration_type": "system"
+}

@@ -1,5 +1,8 @@
 default_config:
 
+# Temporary stack capture for the unexplained Core stalls. Does not restart Core.
+core_stall_watchdog:
+
 homeassistant:
   packages: !include_dir_named packages
 
