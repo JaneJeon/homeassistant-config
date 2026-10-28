@@ -231,8 +231,9 @@
 - id: '1775942323870'
   alias: Alert - automation failure
   description: 'Generic monitor: fires on any system_log_event with level ERROR that
-    relates to an automation. Sends Telegram with the error details. Mode single so
-    cascading failures don''t spam.'
+    relates to another automation. Excludes its own logger so a Telegram delivery
+    timeout cannot trigger another notification about itself. Mode single prevents
+    overlapping notifications.'
   triggers:
   - platform: event
     event_type: system_log_event
@@ -243,6 +244,10 @@
     value_template: '{{ ''automation'' in (trigger.event.data.name | default('''')
       | lower) or ''automation'' in (trigger.event.data.message | default('''') |
       lower) }}'
+  - condition: template
+    value_template: >-
+      {{ trigger.event.data.name | default('')
+         != ('homeassistant.components.' ~ this.entity_id) }}
   actions:
   - action: telegram_bot.send_message
     data:
