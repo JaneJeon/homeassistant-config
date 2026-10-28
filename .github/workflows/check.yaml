@@ -11,6 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Core stall watchdog regression checks
+        run: python3 tools/test_core_stall_watchdog.py -v
+
       # Runs Home Assistant's own config check, in the official image,
       # at the version in .ha-version (Renovate bumps it after each HA release).
       # --fail-on-warnings matters: without it, invalid integration config
