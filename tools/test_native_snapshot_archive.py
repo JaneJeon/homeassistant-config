@@ -115,6 +115,8 @@ def test_securetar_versions(version):
     expected = hashlib.sha256(b"paperless").hexdigest() + "  /share/paperless/media/a.txt\n"
     assert result.paperless_sha256 == hashlib.sha256(expected.encode()).hexdigest()
     assert result.apps[SLUGS[1]]["partitions"] == ["20261030"]
+    assert result.apps[SLUGS[0]]["engine_version"] == "1.153.0"
+    assert result.apps[SLUGS[1]]["engine_version"] == "1.52.0"
 
 
 @pytest.mark.parametrize("flaw", ["missing", "stale", "order", "partition", "corrupt", "symlink", "traversal", "duplicate", "journal", "missing_parts", "missing_partfile", "unlisted_part", "missing_homeassistant", "missing_ca5234a0_paperless-ngx", "listed_missing_addon", "listed_missing_folder", "corrupt_generic", "empty_homeassistant", "install_extra", "uuid_upper", "timestamp_no_fraction", "timestamp_offset", "file_extra", "file_unsorted"])

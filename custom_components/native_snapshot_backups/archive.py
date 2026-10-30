@@ -196,17 +196,17 @@ def _app(tar, slug):
                         raise ValidationError("Invalid VictoriaLogs part metadata")
                     part_required = set(required)
                     if db == "datadb":
-                        version = metadata.get("FormatVersion", 0)
+                        part_format_version = metadata.get("FormatVersion", 0)
                         shards = metadata.get("BloomValuesShardsCount", 0)
-                        if type(version) is not int or version not in range(4) or type(shards) is not int or not 0 <= shards <= 10000:
+                        if type(part_format_version) is not int or part_format_version not in range(4) or type(shards) is not int or not 0 <= shards <= 10000:
                             raise ValidationError("Invalid VictoriaLogs part format")
-                        if version >= 1:
+                        if part_format_version >= 1:
                             part_required |= {"column_names.bin", "columns_header_index.bin"}
                             for shard in range(shards):
                                 part_required |= {f"bloom.bin{shard}", f"values.bin{shard}"}
                         else:
                             part_required |= {"bloom.bin", "values.bin"}
-                        if version >= 3:
+                        if part_format_version >= 3:
                             part_required.add("column_idxs.bin")
                     if not all(f"{prefix}{part}/{filename}" in inventory for filename in part_required):
                         raise ValidationError("Incomplete VictoriaLogs part")
