@@ -1,0 +1,9 @@
+{
+  "domain": "native_snapshot_backups",
+  "name": "Native Snapshot Backups",
+  "version": "0.1.0",
+  "documentation": "https://github.com/JaneJeon/homeassistant-config/tree/master/custom_components/native_snapshot_backups",
+  "dependencies": ["backup"],
+  "codeowners": [],
+  "integration_type": "system"
+}

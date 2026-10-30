@@ -3,6 +3,9 @@ default_config:
 # Temporary stack capture for the unexplained Core stalls. Does not restart Core.
 core_stall_watchdog:
 
+# Verify the exact encrypted B2 artifacts, including fresh native VM/VL exports.
+native_snapshot_backups:
+
 homeassistant:
   packages: !include_dir_named packages
 
@@ -22,7 +25,7 @@ shell_command:
 
 rest_command:
   push_forecast_to_vm:
-    url: "http://1bd4a9fb-victoria-metrics:8428/api/v1/import"
+    url: "http://894a6dc5-victoria-metrics:8428/api/v1/import"
     method: POST
     payload: '{% set hourly = state_attr("sensor.wind_forecast", "hourly") %}{% set ns = namespace(lines=[]) %}{% for entry in hourly %}{% set ts = (as_timestamp(strptime(entry.time, "%Y-%m-%d %H:%M")) * 1000) | int %}{% set ns.lines = ns.lines + ["{\"metric\":{\"__name__\":\"wind_forecast_eff_speed\",\"source\":\"openweathermap\",\"job\":\"wind-forecast\"},\"values\":[" ~ entry.eff_speed ~ "],\"timestamps\":[" ~ ts ~ "]}", "{\"metric\":{\"__name__\":\"wind_forecast_bearing\",\"source\":\"openweathermap\",\"job\":\"wind-forecast\"},\"values\":[" ~ entry.bearing ~ "],\"timestamps\":[" ~ ts ~ "]}"] %}{% endfor %}{{ ns.lines | join("\n") }}'
 

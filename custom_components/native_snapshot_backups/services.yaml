@@ -1,0 +1,23 @@
+validate:
+  name: Validate B2 backup contents
+  description: Read the exact B2 archive and check fresh native snapshots and Share contents.
+  fields:
+    backup_id:
+      name: Backup ID
+      required: true
+      selector:
+        text:
+record_restore_test:
+  name: Record completed isolated restore test
+  description: Record independently checked full HA OS restore evidence for a validated backup.
+  fields:
+    backup_id:
+      name: Backup ID
+      required: true
+      selector:
+        text:
+    proof_sha256:
+      name: SHA256 of the restore evidence report
+      required: true
+      selector:
+        text:

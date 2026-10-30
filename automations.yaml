@@ -898,7 +898,7 @@
       notification_id: automatic_backup_problem
       title: Automatic backup failed
       message: 'Home Assistant reported an automatic backup failure. Do not clear
-        the Paperless pending-shred tray until a later backup succeeds. Reason: {{
+        the Paperless pending-shred tray until a later backup passes content validation. Reason: {{
         state_attr(''event.backup_automatic_backup'', ''failed_reason'') | default(''not
         reported'', true) }}'
   - action: telegram_bot.send_message
@@ -907,7 +907,7 @@
       message: '❌ Automatic backup failed
 
 
-        Do not clear the Paperless pending-shred tray until a later backup succeeds.
+        Do not clear the Paperless pending-shred tray until a later backup passes content validation.
 
 
         Reason: {{ state_attr(''event.backup_automatic_backup'', ''failed_reason'')
@@ -922,14 +922,14 @@
     at: 09:15:00
   conditions:
   - condition: template
-    value_template: '{{ as_timestamp(now()) - as_timestamp(states(''sensor.backup_last_successful_automatic_backup''),
+    value_template: '{{ as_timestamp(now()) - as_timestamp(states(''sensor.native_snapshot_backup_last_validated''),
       0) > 129600 }}'
   actions:
   - action: persistent_notification.create
     data:
       notification_id: automatic_backup_problem
       title: Automatic backup is stale
-      message: The last successful automatic backup is more than 36 hours old. Do
+      message: The last content-validated B2 backup is more than 36 hours old. Do
         not clear the Paperless pending-shred tray until backup health recovers.
   - action: telegram_bot.send_message
     data:
@@ -937,17 +937,20 @@
       message: '⚠️ Automatic backup is stale
 
 
-        The last successful automatic backup is more than 36 hours old. Do not clear
+        The last content-validated B2 backup is more than 36 hours old. Do not clear
         the Paperless pending-shred tray until backup health recovers.'
   mode: single
 - id: '1789902218414'
   alias: Resolve - Automatic backup recovered
-  description: Dismiss the backup problem warning whenever Home Assistant records
-    a new successful automatic backup.
+  description: Dismiss the backup problem warning after a newer complete B2 archive passes
+    native snapshot content validation.
   triggers:
   - platform: state
-    entity_id: sensor.backup_last_successful_automatic_backup
+    entity_id: sensor.native_snapshot_backup_last_validated
   conditions:
+  - condition: state
+    entity_id: sensor.native_snapshot_backup_status
+    state: valid
   - condition: template
     value_template: '{{ trigger.to_state is not none and trigger.from_state is not
       none and trigger.to_state.state not in [''unknown'', ''unavailable'', ''none'',
