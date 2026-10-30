@@ -118,14 +118,18 @@ automation:
   - id: safe_share_backup_recover_apps
     alias: Backup - recover paused database apps
     description: >-
-      Retry owned app starts after an interrupted backup or failed start. The
-      Supervisor may reject starts during a backup freeze; leave ownership set
-      until the running sensor confirms success and retry on the next minute.
+      Resume owned apps once the current backup reaches upload, or retry after
+      an interrupted backup or failed start. Keep ownership until the running
+      sensor confirms success; retry on the next minute.
     triggers:
       - trigger: homeassistant
         event: start
       - trigger: time_pattern
         minutes: "/1"
+      - trigger: state
+        entity_id: event.backup_automatic_backup
+        attribute: backup_stage
+        to: upload_to_agents
     conditions:
       - condition: or
         conditions:
@@ -135,12 +139,38 @@ automation:
           - condition: state
             entity_id: input_boolean.backup_paused_victorialogs
             state: "on"
-      - condition: state
-        entity_id: script.backup_share_safely
-        state: "off"
-      - condition: state
-        entity_id: sensor.backup_backup_manager_state
-        state: idle
+      - condition: or
+        conditions:
+          - condition: and
+            conditions:
+              - condition: state
+                entity_id: script.backup_share_safely
+                state: "off"
+              - condition: state
+                entity_id: sensor.backup_backup_manager_state
+                state: idle
+          - condition: and
+            conditions:
+              - condition: state
+                entity_id: script.backup_share_safely
+                state: "on"
+              - condition: state
+                entity_id: sensor.backup_backup_manager_state
+                state: create_backup
+              - condition: state
+                entity_id: event.backup_automatic_backup
+                attribute: event_type
+                state: in_progress
+              - condition: state
+                entity_id: event.backup_automatic_backup
+                attribute: backup_stage
+                state: upload_to_agents
+              # Ignore a retained upload event from an earlier script run.
+              - condition: template
+                value_template: >-
+                  {% set event_time = as_timestamp(states('event.backup_automatic_backup'), none) %}
+                  {% set started = as_timestamp(state_attr('script.backup_share_safely', 'last_triggered'), none) %}
+                  {{ event_time is not none and started is not none and event_time >= started }}
     actions:
       - parallel:
           - if:
