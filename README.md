@@ -48,7 +48,7 @@ Nothing in GitHub can reach the Green: no deploy secrets, no inbound webhook. Th
 
 `packages/safe_share_backup.yaml` runs `script.backup_share_safely` daily at 05:24 Pacific. Keep the built-in backup schedule off to avoid a second, unprotected run. The script uses Home Assistant's automatic-backup settings for content, encryption, B2 destination and retention.
 
-VictoriaMetrics and VictoriaLogs keep their live databases in Share. The script stops running database apps before copying Share, then restarts them. Collection pauses through backup creation and upload. Persisted ownership flags let a recovery automation retry starts after an interrupted run; it clears each flag only after the app is confirmed running.
+VictoriaMetrics and VictoriaLogs keep their live databases in Share. The script stops running database apps before copying Share. A recovery automation restarts them when the completed archive enters the upload stage, so collection can resume while B2 receives the backup. Persisted ownership flags also let it retry starts after an interrupted run; it clears each flag only after the app is confirmed running.
 
 For an immediate complete backup, run **Backup share safely** from Scripts. Other backup entry points that include Share bypass this protection and can race the live database files. Failure evidence is recorded in Craft, Workspace/2026-10-29 Paperless storage and Nextcloud, Log.
 
