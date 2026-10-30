@@ -61,9 +61,9 @@ template:
   # trigger it. 3% is Jane's line: at that level ordinary browsing already
   # nearly stops, and it is an early warning of worse to come. With 30 pings
   # a minute, 3% over 10 minutes is about 9 lost pings out of 300 per target.
-  # This is the phone's Internet tile. Nothing acts on it automatically.
-  # (It was 20% until 2026-10-23, an agent's pick for a restart trigger that
-  # was never built.)
+  # This is the phone's Internet tile, and it drives the Telegram alerts at
+  # the bottom of this file. (It was 20% until 2026-10-23, an agent's pick for
+  # a restart trigger that was never built.)
   - binary_sensor:
       - name: Internet degraded
         unique_id: internet_degraded
@@ -94,3 +94,87 @@ sensor:
       minutes: 10
     sampling_size: 30
     precision: 1
+
+automation:
+  # Telegram when the Internet tile turns on, and again once it has been off
+  # for 15 minutes. Jane said yes to an alert at her 3% line on 2026-10-30.
+  #
+  # On 2026-10-20 she turned down a Telegram alert because a dead internet
+  # cannot deliver one. That still holds for a dead internet, which is caught
+  # off-site instead: the Railway Uptime Kuma pages PagerDuty when the Green's
+  # 5-minute heartbeat stops. Partial loss usually still lets a message
+  # through. If the first message does not get through, the recovery message
+  # still says when the alert went off.
+  #
+  # One episode sends at most two messages. The start alert is skipped while
+  # an episode is open (alerted, not yet recovered), so a 10-minute average
+  # wobbling around 3% does not repeat it. An episode older than 6 hours no
+  # longer blocks a new alert, so a missed recovery cannot silence it for good.
+  #
+  # continue_on_error: a failed send must not raise an automation error,
+  # which would set off the error monitor's own Telegram alert.
+  - id: internet_degraded_alert
+    alias: Internet - degraded alert
+    description: >-
+      Tells Jane when Google and Cloudflare both lose 3% or more of pings over
+      10 minutes. One message per episode.
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.internet_degraded
+        from: "off"
+        to: "on"
+    conditions:
+      - condition: template
+        value_template: >-
+          {% set started = state_attr(this.entity_id, 'last_triggered') %}
+          {% set ended = state_attr('automation.internet_recovered_alert', 'last_triggered') %}
+          {{ started is none
+             or (ended is not none and ended > started)
+             or now() - started > timedelta(hours=6) }}
+    actions:
+      - action: notify.send_message
+        continue_on_error: true
+        target:
+          entity_id: notify.telegram_bot_7842566738_7054392448
+        data:
+          title: Internet losing pings
+          message: >-
+            Over the last 10 minutes, {{ states('sensor.packet_loss_google_dns_10_min') }}%
+            of pings to Google and {{ states('sensor.packet_loss_cloudflare_dns_10_min') }}%
+            to Cloudflare were lost. The gateway lost
+            {{ states('sensor.packet_loss_gateway') }}% in its latest check.
+
+  - id: internet_recovered_alert
+    alias: Internet - recovered alert
+    description: >-
+      Tells Jane when ping loss has stayed under 3% for 15 minutes after a
+      degraded alert, and how long the trouble lasted.
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.internet_degraded
+        to: "off"
+        for:
+          minutes: 15
+    conditions:
+      - condition: template
+        value_template: >-
+          {% set started = state_attr('automation.internet_degraded_alert', 'last_triggered') %}
+          {% set ended = state_attr(this.entity_id, 'last_triggered') %}
+          {{ started is not none
+             and (ended is none or started > ended)
+             and now() - started < timedelta(hours=24) }}
+    actions:
+      - action: notify.send_message
+        continue_on_error: true
+        target:
+          entity_id: notify.telegram_bot_7842566738_7054392448
+        data:
+          title: Internet back under 3% loss
+          message: >-
+            {% set started = as_local(state_attr('automation.internet_degraded_alert', 'last_triggered')) %}
+            {% set minutes = ((now() - started).total_seconds() / 60 - 15) | round(0) | int %}
+            Ping loss has been under 3% for 15 minutes. The alert went off at
+            {{ started.strftime('%-I:%M %p') }}, and the loss lasted about
+            {{ [minutes, 1] | max }} minutes after that.
