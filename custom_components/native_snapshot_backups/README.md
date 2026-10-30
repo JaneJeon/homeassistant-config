@@ -26,7 +26,15 @@ Use the shipped `tools/native_restore_lab.py` and `tools/verify_native_restore.p
 
 Only after the lab is locked and running with restricted networking may a production backup be introduced. Restore the exact B2 artifact through HA/Supervisor, check native app startup and historical query results, and compare restored Paperless media with the archive manifest. Production-LAN access and Internet access must fail in the isolated guest.
 
+Supervisor normally requires Internet connectivity for a full restore. After checking the lab's isolation, the restore command ignores only its `internet_host` and `internet_system` job conditions in that disposable guest and records the settings in the proof. Health and free-space checks remain enabled. No network access is enabled. The command also checks the CLI's JSON result: an exit code of zero can accompany a rejected restore.
+
 Keep the evidence report private: it records the backup ID, artifact digest, software versions, query comparisons and file-manifest comparisons. Repeat the full drill after changes to snapshot formats or restore/bootstrap code.
+
+For a backup whose Supervisor metadata says `partial`, the command restores Home Assistant and every declared app and folder. That metadata reflects the configured content selection; the proof records the selection so omitted restore arguments cannot silently reduce the drill.
+
+Run `tools/test_native_snapshot_real_faults.py` with a quiesced legacy baseline and its `--reference-time` to repeat actual ENOSPC and SIGKILL tests against the published images. The preceding day must contain metrics and logs. The test uses disposable Linux Docker volumes, disables container networking, mounts the baseline read-only, and checks historical aggregates after recovery. Keep the source and result outside Git.
+
+After a passing restore, `tools/test_native_snapshot_stopped_lab.py --help` describes the stopped-app drill. It stops both native apps in that same isolated lab, creates a new encrypted local backup, and requires rejection specifically for stale snapshots. It compares archived generations and payload hashes with the stopped data and watches for unintended starts. It deliberately leaves the lab apps stopped with automatic boot and watchdog disabled. A private `--prestop-report` can resume a test interrupted after stopping them; restarting them would invalidate that test.
 
 Create a local environment for the operator commands:
 

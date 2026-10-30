@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tarfile
 import time
+from uuid import uuid4
 from urllib.parse import urlencode, quote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
@@ -95,12 +96,24 @@ def backup_metadata_from_archive(path):
                 if len(raw) > 8 * 1024 * 1024:
                     break
                 metadata = json.loads(raw)
+                if not isinstance(metadata, dict):
+                    break
                 result = metadata.get("slug")
                 homeassistant = metadata.get("homeassistant")
-                if isinstance(result, str) and re.fullmatch(r"[a-zA-Z0-9_-]+", result) and isinstance(homeassistant, dict) and isinstance(homeassistant.get("version"), str) and homeassistant["version"]:
-                    return {"backup_id": result, "core_version": homeassistant["version"]}
-                break
-    raise ProofError("Archive backup identifier or Core version is missing or invalid")
+                apps = metadata.get("addons")
+                folders = metadata.get("folders")
+                mode = metadata.get("type")
+                if not (isinstance(result, str) and re.fullmatch(r"[a-zA-Z0-9_-]+", result) and isinstance(homeassistant, dict) and isinstance(homeassistant.get("version"), str) and homeassistant["version"] and mode in ("full", "partial") and isinstance(apps, list) and isinstance(folders, list)):
+                    break
+                if any(not isinstance(app, dict) or not isinstance(app.get("slug"), str) or not re.fullmatch(r"[a-zA-Z0-9_-]+", app["slug"]) for app in apps):
+                    break
+                app_slugs = [app["slug"] for app in apps]
+                if len(set(app_slugs)) != len(app_slugs) or any(not isinstance(folder, str) or not re.fullmatch(r"[a-zA-Z0-9_-]+(?:/[a-zA-Z0-9_-]+)*", folder) for folder in folders) or len(set(folders)) != len(folders):
+                    break
+                if mode == "partial" and not app_slugs and not folders:
+                    raise ProofError("Partial backup has no app or folder selection")
+                return {"backup_id": result, "core_version": homeassistant["version"], "mode": mode, "apps": app_slugs, "folders": folders}
+    raise ProofError("Archive backup metadata is missing or invalid")
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -301,10 +314,48 @@ def version_summary(data):
     return {key: data.get(key) for key in ("version", "arch", "board") if key in data}
 
 
+def configure_offline_conditions(base, report):
+    allowed = {"internet_host", "internet_system"}
+    info = guest_json(base, "ha jobs info")
+    previous = info.get("ignore_conditions") if isinstance(info, dict) else None
+    if not isinstance(previous, list) or any(not isinstance(item, str) for item in previous) or len(previous) != len(set(previous)) or not set(previous).issubset(allowed):
+        raise ProofError("Unexpected ignored Supervisor job conditions")
+    report["supervisor_job_conditions"] = {"previously_ignored": previous, "requested_ignored": sorted(allowed)}
+    guest_json(base, "ha jobs options --ignore-conditions internet_host --ignore-conditions internet_system --no-progress")
+    current = guest_json(base, "ha jobs info")
+    ignored = current.get("ignore_conditions") if isinstance(current, dict) else None
+    if not isinstance(ignored, list) or len(ignored) != 2 or set(ignored) != allowed:
+        raise ProofError("Supervisor job condition override could not be verified")
+    report["supervisor_job_conditions"]["verified_ignored"] = sorted(ignored)
+
+
+def restore_selection_arguments(metadata):
+    if metadata["mode"] == "full":
+        return []
+    if metadata["mode"] != "partial" or not (metadata["apps"] or metadata["folders"]):
+        raise ProofError("Invalid partial restore selection")
+    arguments = ["--homeassistant"]
+    for app in metadata["apps"]:
+        arguments.extend(("--app", app))
+    for folder in metadata["folders"]:
+        arguments.extend(("--folders", folder))
+    return arguments
+
+
+def check_restore_cli_result(raw):
+    try:
+        payload = json.loads(raw)
+    except (ValueError, TypeError) as exc:
+        raise ProofError("Restore CLI returned invalid JSON") from exc
+    if not isinstance(payload, dict) or payload.get("result") != "ok":
+        raise ProofError("Home Assistant restore command reported an error")
+
+
 def restore(args):
     # Reserve the evidence file before touching the guest, including on failures.
     with create_private(args.report) as report_file:
         report = {"schema_version": 1, "status": "failed", "tested_at": datetime.now(timezone.utc)}
+        interrupted = False
         try:
             root = Path(args.lab_dir).resolve()
             guard_lab(root)
@@ -316,6 +367,8 @@ def restore(args):
             report["source_archive_sha256"] = digest(args.archive)
             result = validate(args.archive, key, backup_id)
             report["archive_validation"] = dataclasses.asdict(result)
+            report["restore_selection"] = {"mode": archive_metadata["mode"], "homeassistant": True, "apps": archive_metadata["apps"], "folders": archive_metadata["folders"]}
+            selection = " ".join(shlex.quote(arg) for arg in restore_selection_arguments(archive_metadata))
             expectations = json.loads(Path(args.expectations).read_text())
             if expectations.get("schema_version") != 1 or not isinstance(expectations.get("queries"), list):
                 raise ProofError("Invalid historical expectations")
@@ -333,23 +386,34 @@ def restore(args):
             base = ssh_base(root, args.ssh_key)
             report["phase"] = "isolation_before_upload"
             report["isolation_before_upload"] = probes(base)
-            print("Lab isolation verified; uploading encrypted backup", flush=True)
+            report["phase"] = "configure_offline_supervisor"
+            configure_offline_conditions(base, report)
+            report["phase"] = "stage_archive"
+            print("Lab isolation verified; staging encrypted backup", flush=True)
             # Backup ID is restricted to a filename-safe alphabet above.
-            with open(args.archive, "rb") as artifact:
-                completed = subprocess.run(base + [f"umask 077; set -C; cat > /mnt/data/supervisor/backup/{backup_id}.tar"], stdin=artifact, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=3600)
-            if completed.returncode:
-                raise ProofError("Encrypted archive upload failed")
-            uploaded = ssh(base, f"sha256sum /mnt/data/supervisor/backup/{backup_id}.tar | cut -d' ' -f1", timeout=3600).strip()
+            destination = f"/mnt/data/supervisor/backup/{backup_id}.tar"
+            existing = ssh(base, f"if [ -e {destination} ] || [ -L {destination} ]; then [ -f {destination} ] && [ ! -L {destination} ] || exit 1; sha256sum {destination} | cut -d' ' -f1; else echo ABSENT; fi", timeout=3600).strip()
+            report["archive_reused"] = existing != "ABSENT"
+            if existing != "ABSENT" and existing != report["source_archive_sha256"]:
+                raise ProofError("Existing staged archive does not match source")
+            if existing == "ABSENT":
+                with open(args.archive, "rb") as artifact:
+                    completed = subprocess.run(base + [f"umask 077; set -C; cat > {destination}"], stdin=artifact, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=3600)
+                if completed.returncode:
+                    raise ProofError("Encrypted archive upload failed")
+            uploaded = ssh(base, f"sha256sum {destination} | cut -d' ' -f1", timeout=3600).strip()
             if uploaded != report["source_archive_sha256"]:
                 raise ProofError("Uploaded encrypted archive hash differs from source")
             report["uploaded_sha256"] = uploaded
             ssh(base, "ha backups reload >/dev/null", timeout=120)
             print("Starting full restore", flush=True)
             report["phase"] = "restore"
-            marker = f"/mnt/data/native-restore-{backup_id}.exit"
-            log = f"/mnt/data/native-restore-{backup_id}.log"
+            attempt = uuid4().hex
+            report["attempt_id"] = attempt
+            marker = f"/mnt/data/native-restore-{backup_id}-{attempt}.exit"
+            log = f"/mnt/data/native-restore-{backup_id}-{attempt}.log"
             command = (f'test ! -e {marker} && test ! -e {log} || exit 1; IFS= read -r key; '
-                       f'( ha backups restore {backup_id} --password "$key" --raw-json --no-progress >{log} 2>&1; '
+                       f'( ha backups restore {backup_id} {selection} --password "$key" --raw-json --no-progress >{log} 2>&1; '
                        f'printf "%s\\n" "$?" >{marker}.tmp; mv {marker}.tmp {marker} ) </dev/null >/dev/null 2>&1 &')
             ssh(base, command, input_bytes=(key + "\n").encode(), timeout=120)
             del key
@@ -363,6 +427,7 @@ def restore(args):
                         if status != "PENDING":
                             if status != "0":
                                 raise ProofError("Home Assistant restore command failed")
+                            check_restore_cli_result(ssh(base, f"head -c 1048577 {log}", timeout=30))
                             finished = True
                         else:
                             time.sleep(10)
@@ -375,7 +440,7 @@ def restore(args):
                         ready = True
                         break
                 except ProofError as exc:
-                    if str(exc) == "Home Assistant restore command failed":
+                    if str(exc) in ("Home Assistant restore command failed", "Home Assistant restore command reported an error", "Restore CLI returned invalid JSON"):
                         raise
                 except (OSError, ValueError, subprocess.SubprocessError):
                     pass
@@ -412,10 +477,15 @@ def restore(args):
                 raise ProofError("Restored Paperless media differs from archive")
             report["phase"] = "complete"
             report["status"] = "passed"
+        except KeyboardInterrupt:
+            interrupted = True
+            report["failure"] = "Interrupted; a guest restore may still be running"
         except Exception as exc:
             report["failure"] = str(exc) if isinstance(exc, ProofError) else f"{type(exc).__name__} during restore proof"
         json.dump(report, report_file, indent=2, sort_keys=True, default=json_default)
         report_file.write("\n")
+    if interrupted:
+        raise SystemExit(130)
     if report["status"] != "passed":
         raise ProofError(report["failure"])
     print("Restore proof passed")
