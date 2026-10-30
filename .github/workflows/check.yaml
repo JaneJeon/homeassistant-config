@@ -17,6 +17,11 @@ jobs:
       - name: Restore proof acceptance checks
         run: python3 -m unittest discover -s tools -p test_verify_native_restore.py -v
 
+      - name: Published snapshot runtime fault checks
+        run: |
+          docker run --rm --network none -v "$PWD:/repo:ro" --entrypoint python3 \
+            ghcr.io/janejeon/victoria-logs:0.1.0 /repo/tools/test_native_snapshot_faults.py
+
       - name: Native snapshot archive corruption checks
         run: |
           docker run --rm -v "$PWD:/repo:ro" -w /repo python:3.14-slim \
