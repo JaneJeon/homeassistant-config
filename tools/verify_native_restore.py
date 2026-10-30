@@ -87,18 +87,20 @@ def digest(path):
     return h.hexdigest()
 
 
-def backup_id_from_archive(path):
+def backup_metadata_from_archive(path):
     with tarfile.open(path, "r|") as outer:
         for member in outer:
             if member.name.removeprefix("./") == "backup.json" and member.isfile():
                 raw = outer.extractfile(member).read(8 * 1024 * 1024 + 1)
                 if len(raw) > 8 * 1024 * 1024:
                     break
-                result = json.loads(raw).get("slug")
-                if isinstance(result, str) and re.fullmatch(r"[a-zA-Z0-9_-]+", result):
-                    return result
+                metadata = json.loads(raw)
+                result = metadata.get("slug")
+                homeassistant = metadata.get("homeassistant")
+                if isinstance(result, str) and re.fullmatch(r"[a-zA-Z0-9_-]+", result) and isinstance(homeassistant, dict) and isinstance(homeassistant.get("version"), str) and homeassistant["version"]:
+                    return {"backup_id": result, "core_version": homeassistant["version"]}
                 break
-    raise ProofError("Archive backup identifier is missing or invalid")
+    raise ProofError("Archive backup identifier or Core version is missing or invalid")
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -274,6 +276,31 @@ def guest_json(base, command):
     return data.get("data", data)
 
 
+def core_config_summary(raw, expected_version):
+    try:
+        config = json.loads(raw)
+    except (ValueError, TypeError) as exc:
+        raise ProofError("Core API did not return valid configuration") from exc
+    if not isinstance(config, dict) or config.get("state") != "RUNNING" or config.get("version") != expected_version:
+        raise ProofError("Core API is not running the backed-up version")
+    components = config.get("components")
+    if not isinstance(components, list) or "native_snapshot_backups" not in components:
+        raise ProofError("Core API did not report the native snapshot integration")
+    return {"version": config["version"], "state": config["state"], "native_integration_loaded": True}
+
+
+def guest_core_config(base, token, expected_version):
+    command = ('IFS= read -r token; curl --noproxy "*" -fsS --connect-timeout 5 --max-time 15 '
+               '-H "Authorization: Bearer $token" http://127.0.0.1:8123/api/config')
+    return core_config_summary(ssh(base, command, input_bytes=(token + "\n").encode(), timeout=25), expected_version)
+
+
+def version_summary(data):
+    if not isinstance(data, dict) or not isinstance(data.get("version"), str) or not data["version"]:
+        raise ProofError("Supervisor or OS version is unavailable")
+    return {key: data.get(key) for key in ("version", "arch", "board") if key in data}
+
+
 def restore(args):
     # Reserve the evidence file before touching the guest, including on failures.
     with create_private(args.report) as report_file:
@@ -282,7 +309,9 @@ def restore(args):
             root = Path(args.lab_dir).resolve()
             guard_lab(root)
             key = private_file(args.key_file)
-            backup_id = backup_id_from_archive(args.archive)
+            ha_token = private_file(args.ha_token_file)
+            archive_metadata = backup_metadata_from_archive(args.archive)
+            backup_id = archive_metadata["backup_id"]
             report["backup_id"] = backup_id
             report["source_archive_sha256"] = digest(args.archive)
             result = validate(args.archive, key, backup_id)
@@ -342,6 +371,7 @@ def restore(args):
                     apps = {slug: guest_json(base, "ha apps info " + slug) for slug in (*SLUGS, "ca5234a0_paperless-ngx")}
                     core_state = ssh(base, "docker inspect --format '{{.State.Status}}' homeassistant").strip()
                     if core_state == "running" and all(app.get("state") in ("started", "running") for app in apps.values()):
+                        core_api = guest_core_config(base, ha_token, archive_metadata["core_version"])
                         ready = True
                         break
                 except ProofError as exc:
@@ -351,9 +381,11 @@ def restore(args):
                     pass
                 time.sleep(10)
             if not ready:
-                raise ProofError("Restore did not reach running Core and app states before timeout")
-            report["core"] = {key: core.get(key) for key in ("version", "image")}
-            report["core"]["state"] = core_state
+                raise ProofError("Restore did not reach verified Core API and running app states before timeout")
+            report["core"] = core_api
+            report["supervisor"] = version_summary(guest_json(base, "ha supervisor info"))
+            report["os"] = version_summary(guest_json(base, "ha os info"))
+            del ha_token
             report["apps"] = {slug: {key: app.get(key) for key in ("state", "version", "image")} for slug, app in apps.items()}
             report["isolation_after_restore"] = probes(base)
             report["phase"] = "historical_queries"
@@ -402,7 +434,7 @@ def main():
     for option in ("metrics-url", "logs-url", "output"):
         cap.add_argument("--" + option, required=True)
     run = sub.add_parser("restore")
-    for option in ("lab-dir", "archive", "key-file", "ssh-key", "expectations", "report"):
+    for option in ("lab-dir", "archive", "key-file", "ha-token-file", "ssh-key", "expectations", "report"):
         run.add_argument("--" + option, required=True)
     run.add_argument("--timeout", type=int, default=3600)
     args = parser.parse_args()

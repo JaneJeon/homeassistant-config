@@ -36,4 +36,4 @@ python3 -m venv /tmp/native-backup-tools
 /tmp/native-backup-tools/bin/python tools/verify_native_restore.py --help
 ```
 
-`download` requires the HA URL, the exact B2 agent and backup IDs, and a private token file. `validate` and `restore` read the encryption key from a private file. The tools refuse credentials in non-private files. Use `capture` before cutover to record fixed historical queries. The `restore` command requires the locked isolated lab, its SSH key, the encrypted archive, those expectations and a new private report path.
+`download` requires the HA URL, the exact B2 agent and backup IDs, and a private token file. `validate` and `restore` read the encryption key from a private file. The tools refuse credentials in non-private files. Use `capture` before cutover to record fixed historical queries. The `restore` command requires the locked isolated lab, its SSH key, the encrypted archive, those expectations and a new private report path. Supply `--ha-token-file` to verify the preserved HA account and the actual restored Core API; a running container or landing page alone cannot pass.

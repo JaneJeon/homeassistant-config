@@ -14,6 +14,9 @@ jobs:
       - name: Core stall watchdog regression checks
         run: python3 tools/test_core_stall_watchdog.py -v
 
+      - name: Restore proof acceptance checks
+        run: python3 -m unittest discover -s tools -p test_verify_native_restore.py -v
+
       - name: Native snapshot archive corruption checks
         run: |
           docker run --rm -v "$PWD:/repo:ro" -w /repo python:3.14-slim \
