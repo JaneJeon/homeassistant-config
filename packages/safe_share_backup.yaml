@@ -1,218 +1,27 @@
-# These helpers restore their previous state across a Core restart. They mean
-# this workflow owns restarting the app, not merely that the app is stopped.
-input_boolean:
-  backup_paused_victoriametrics:
-    name: Backup paused VictoriaMetrics
-  backup_paused_victorialogs:
-    name: Backup paused VictoriaLogs
-
+# The app hot-backup hooks prepare native exports. No database shutdown is needed.
 script:
   backup_share_safely:
     alias: Backup share safely
     description: >-
-      Stop running VictoriaMetrics and VictoriaLogs before the automatic backup.
-      Manual backups bypass this script and can race live database files.
+      Create an automatic backup using the existing encryption, B2 location and
+      retention. The database apps export snapshots through their hot backup
+      hooks. Native snapshot checks validate the artifact after upload.
     mode: single
     sequence:
       - condition: state
         entity_id: sensor.backup_backup_manager_state
         state: idle
-      - condition: state
-        entity_id:
-          - input_boolean.backup_paused_victoriametrics
-          - input_boolean.backup_paused_victorialogs
-        state: "off"
-      # Unknown/unavailable is not evidence that an app is already stopped.
-      - condition: template
-        value_template: >-
-          {{ states('binary_sensor.victoriametrics_running') in ['on', 'off']
-             and states('binary_sensor.victorialogs_running') in ['on', 'off'] }}
-      - if:
-          - condition: state
-            entity_id: binary_sensor.victoriametrics_running
-            state: "on"
-        then:
-          - action: input_boolean.turn_on
-            target:
-              entity_id: input_boolean.backup_paused_victoriametrics
-          - action: homeassistant.save_persistent_states
-          - action: hassio.app_stop
-            data:
-              app: 1bd4a9fb_victoria_metrics
-      - if:
-          - condition: state
-            entity_id: binary_sensor.victorialogs_running
-            state: "on"
-        then:
-          - action: input_boolean.turn_on
-            target:
-              entity_id: input_boolean.backup_paused_victorialogs
-          - action: homeassistant.save_persistent_states
-          - action: hassio.app_stop
-            data:
-              app: 24c4882f_victoria_logs
-      - wait_template: >-
-          {{ is_state('binary_sensor.victoriametrics_running', 'off')
-             and is_state('binary_sensor.victorialogs_running', 'off') }}
-        timeout: "00:02:00"
-        continue_on_timeout: false
       - action: backup.create_automatic
-        continue_on_error: true
-      - parallel:
-          - if:
-              - condition: state
-                entity_id: input_boolean.backup_paused_victoriametrics
-                state: "on"
-            then:
-              - action: hassio.app_start
-                data:
-                  app: 1bd4a9fb_victoria_metrics
-                continue_on_error: true
-              - wait_template: "{{ is_state('binary_sensor.victoriametrics_running', 'on') }}"
-                timeout: "00:02:00"
-                continue_on_timeout: true
-              - if:
-                  - condition: state
-                    entity_id: binary_sensor.victoriametrics_running
-                    state: "on"
-                then:
-                  - action: input_boolean.turn_off
-                    target:
-                      entity_id: input_boolean.backup_paused_victoriametrics
-                  - action: homeassistant.save_persistent_states
-          - if:
-              - condition: state
-                entity_id: input_boolean.backup_paused_victorialogs
-                state: "on"
-            then:
-              - action: hassio.app_start
-                data:
-                  app: 24c4882f_victoria_logs
-                continue_on_error: true
-              - wait_template: "{{ is_state('binary_sensor.victorialogs_running', 'on') }}"
-                timeout: "00:02:00"
-                continue_on_timeout: true
-              - if:
-                  - condition: state
-                    entity_id: binary_sensor.victorialogs_running
-                    state: "on"
-                then:
-                  - action: input_boolean.turn_off
-                    target:
-                      entity_id: input_boolean.backup_paused_victorialogs
-                  - action: homeassistant.save_persistent_states
 
 automation:
   - id: safe_share_backup_daily
     alias: Backup - safely back up share
     description: >-
-      Run the automatic backup after stopping the live databases in share.
-      Manual backups bypass this automation and can race live database files.
+      Run the automatic backup daily. App hooks prepare online snapshots and
+      artifact validation determines whether this is a complete recovery point.
     triggers:
       - trigger: time
         at: "05:24:00"
     actions:
       - action: script.backup_share_safely
-    mode: single
-
-  - id: safe_share_backup_recover_apps
-    alias: Backup - recover paused database apps
-    description: >-
-      Resume owned apps once the current backup reaches upload, or retry after
-      an interrupted backup or failed start. Keep ownership until the running
-      sensor confirms success; retry on the next minute.
-    triggers:
-      - trigger: homeassistant
-        event: start
-      - trigger: time_pattern
-        minutes: "/1"
-      - trigger: state
-        entity_id: event.backup_automatic_backup
-        attribute: backup_stage
-        to: upload_to_agents
-    conditions:
-      - condition: or
-        conditions:
-          - condition: state
-            entity_id: input_boolean.backup_paused_victoriametrics
-            state: "on"
-          - condition: state
-            entity_id: input_boolean.backup_paused_victorialogs
-            state: "on"
-      - condition: or
-        conditions:
-          - condition: and
-            conditions:
-              - condition: state
-                entity_id: script.backup_share_safely
-                state: "off"
-              - condition: state
-                entity_id: sensor.backup_backup_manager_state
-                state: idle
-          - condition: and
-            conditions:
-              - condition: state
-                entity_id: script.backup_share_safely
-                state: "on"
-              - condition: state
-                entity_id: sensor.backup_backup_manager_state
-                state: create_backup
-              - condition: state
-                entity_id: event.backup_automatic_backup
-                attribute: event_type
-                state: in_progress
-              - condition: state
-                entity_id: event.backup_automatic_backup
-                attribute: backup_stage
-                state: upload_to_agents
-              # Ignore a retained upload event from an earlier script run.
-              - condition: template
-                value_template: >-
-                  {% set event_time = as_timestamp(states('event.backup_automatic_backup'), none) %}
-                  {% set started = as_timestamp(state_attr('script.backup_share_safely', 'last_triggered'), none) %}
-                  {{ event_time is not none and started is not none and event_time >= started }}
-    actions:
-      - parallel:
-          - if:
-              - condition: state
-                entity_id: input_boolean.backup_paused_victoriametrics
-                state: "on"
-            then:
-              - action: hassio.app_start
-                data:
-                  app: 1bd4a9fb_victoria_metrics
-                continue_on_error: true
-              - wait_template: "{{ is_state('binary_sensor.victoriametrics_running', 'on') }}"
-                timeout: "00:00:30"
-                continue_on_timeout: true
-              - if:
-                  - condition: state
-                    entity_id: binary_sensor.victoriametrics_running
-                    state: "on"
-                then:
-                  - action: input_boolean.turn_off
-                    target:
-                      entity_id: input_boolean.backup_paused_victoriametrics
-                  - action: homeassistant.save_persistent_states
-          - if:
-              - condition: state
-                entity_id: input_boolean.backup_paused_victorialogs
-                state: "on"
-            then:
-              - action: hassio.app_start
-                data:
-                  app: 24c4882f_victoria_logs
-                continue_on_error: true
-              - wait_template: "{{ is_state('binary_sensor.victorialogs_running', 'on') }}"
-                timeout: "00:00:30"
-                continue_on_timeout: true
-              - if:
-                  - condition: state
-                    entity_id: binary_sensor.victorialogs_running
-                    state: "on"
-                then:
-                  - action: input_boolean.turn_off
-                    target:
-                      entity_id: input_boolean.backup_paused_victorialogs
-                  - action: homeassistant.save_persistent_states
     mode: single

@@ -48,9 +48,11 @@ Nothing in GitHub can reach the Green: no deploy secrets, no inbound webhook. Th
 
 `packages/safe_share_backup.yaml` runs `script.backup_share_safely` daily at 05:24 Pacific. Keep the built-in backup schedule off to avoid a second, unprotected run. The script uses Home Assistant's automatic-backup settings for content, encryption, B2 destination and retention.
 
-VictoriaMetrics and VictoriaLogs keep their live databases in Share. The script stops running database apps before copying Share. A recovery automation restarts them when the completed archive enters the upload stage, so collection can resume while B2 receives the backup. Persisted ownership flags also let it retry starts after an interrupted run; it clears each flag only after the app is confirmed running.
+The snapshot-aware VictoriaMetrics and VictoriaLogs apps keep live data in private app storage. Their hot backup hooks produce stable native exports before Supervisor copies app data. Routine backups keep both databases running. Share remains included for Paperless and other applications.
 
-For an immediate complete backup, run **Backup share safely** from Scripts. Other backup entry points that include Share bypass this protection and can race the live database files. Failure evidence is recorded in Craft, Workspace/2026-10-29 Paperless storage and Nextcloud, Log.
+For an immediate complete backup, run **Backup share safely** from Scripts. Native export hooks also run for ordinary HA backups that include the apps. The `native_snapshot_backups` integration reads the exact B2 artifact and checks fresh snapshots, component completeness and checksums. A stopped app or failed export cannot silently count as a current complete backup.
+
+Backup health uses `sensor.native_snapshot_backup_last_validated`. A completed upload is separate from content validation, and content validation is separate from a demonstrated full restore. See `custom_components/native_snapshot_backups/README.md` for the states and repeatable restore drill. Migration and recovery evidence belongs in the Craft session **VM and VL PagerDuty alerts — 2026-10-30**.
 
 ## Alerts
 

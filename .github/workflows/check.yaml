@@ -14,6 +14,19 @@ jobs:
       - name: Core stall watchdog regression checks
         run: python3 tools/test_core_stall_watchdog.py -v
 
+      - name: Native snapshot archive corruption checks
+        run: |
+          docker run --rm -v "$PWD:/repo:ro" -w /repo python:3.14-slim \
+            sh -c 'pip install --disable-pip-version-check pytest==9.2.0 securetar==2026.10.0 && python -m pytest -q tools/test_native_snapshot_archive.py'
+
+      - name: Native backup integration compatibility
+        run: |
+          for version in "$(tr -d '[:space:]' < .ha-version)" 2026.10.4; do
+            docker run --rm --network none -v "$PWD:/repo:ro" --entrypoint python3 \
+              "ghcr.io/home-assistant/home-assistant:${version}" \
+              /repo/tools/test_native_backup_integration.py
+          done
+
       # Runs Home Assistant's own config check, in the official image,
       # at the version in .ha-version (Renovate bumps it after each HA release).
       # --fail-on-warnings matters: without it, invalid integration config

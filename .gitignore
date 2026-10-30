@@ -26,6 +26,7 @@ backups/
 custom_components/*
 # Temporary, repo-owned stall diagnostics. Other custom integrations stay in HACS.
 !custom_components/core_stall_watchdog/
+!custom_components/native_snapshot_backups/
 www/community/
 
 # Local clutter.
@@ -38,6 +39,7 @@ www/community/
 # Node tooling for linting and hooks.
 node_modules/
 __pycache__/
+.pytest_cache/
 
 # Written by HA on every upgrade. CI uses .ha-version instead (Renovate bumps it).
 .HA_VERSION
