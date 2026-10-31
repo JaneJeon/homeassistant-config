@@ -1,0 +1,101 @@
+# Internet speed: the latest speed test, and a button to run one now.
+#
+# The XB3 Telemetry app (homeassistant-apps, 0.3.0 and later) runs the tests:
+# every 30 minutes at 7 and 37 past the hour, against Cloudflare's speed-test
+# servers, from the Green's wired connection, so Wi-Fi is not in the path.
+# Its full record (every test, and the windows when a test filled the line) is
+# in VictoriaMetrics and VictoriaLogs. This package only brings the latest
+# result into Home Assistant for the phone, and starts tests on request.
+#
+# Why it exists: Jane sees large download or upload slowdowns that are separate
+# from packet loss, and wants a record of them (2026-10-31). Comparing a test
+# from the Green with one from her own device, run right after, tells the line
+# apart from the Wi-Fi. Use speed.cloudflare.com on the device: it uses the same
+# servers and method. Speedtest.net uses others, so its numbers differ.
+#
+# The app takes commands only through Supervisor stdin, which needs no open
+# port. It runs one test at a time and logs a request made during a test as
+# rejected. Its read-only /speedtest page gives the latest result.
+
+rest_command:
+  xb3_speedtest_status:
+    url: "http://894a6dc5-xb3-telemetry:19090/speedtest"
+    method: get
+    timeout: 5
+
+script:
+  internet_speed_test:
+    alias: Internet - speed test now
+    description: >-
+      Starts a speed test from the Green right away. It takes about half a
+      minute and fills the line while it runs. The result shows on the phone's
+      System tab when it finishes.
+    icon: mdi:speedometer
+    mode: single
+    sequence:
+      - action: hassio.app_stdin
+        data:
+          app: 894a6dc5_xb3-telemetry
+          input:
+            command: speed_test
+            id: "ha-{{ now().strftime('%Y%m%d-%H%M%S') }}"
+
+template:
+  # Reads the app's latest result every 20 seconds. continue_on_error: while
+  # the app restarts or updates, a failed read leaves the sensors unavailable
+  # instead of raising an error.
+  - triggers:
+      - trigger: time_pattern
+        seconds: "/20"
+      - trigger: homeassistant
+        event: start
+    actions:
+      - action: rest_command.xb3_speedtest_status
+        continue_on_error: true
+        response_variable: speed
+    sensor:
+      - name: Internet download speed
+        unique_id: internet_download_speed
+        unit_of_measurement: Mbit/s
+        device_class: data_rate
+        state_class: measurement
+        icon: mdi:download
+        availability: >-
+          {{ speed is defined and speed.status == 200
+             and speed.content.last_result is not none }}
+        state: "{{ speed.content.last_result.download_mbps }}"
+      - name: Internet upload speed
+        unique_id: internet_upload_speed
+        unit_of_measurement: Mbit/s
+        device_class: data_rate
+        state_class: measurement
+        icon: mdi:upload
+        availability: >-
+          {{ speed is defined and speed.status == 200
+             and speed.content.last_result is not none }}
+        state: "{{ speed.content.last_result.upload_mbps }}"
+      - name: Internet speed test ping
+        unique_id: internet_speed_test_ping
+        unit_of_measurement: ms
+        device_class: duration
+        state_class: measurement
+        icon: mdi:timer-outline
+        availability: >-
+          {{ speed is defined and speed.status == 200
+             and speed.content.last_result is not none
+             and speed.content.last_result.idle_latency_ms is not none }}
+        state: "{{ speed.content.last_result.idle_latency_ms | round(0) }}"
+      - name: Internet speed tested
+        unique_id: internet_speed_tested
+        device_class: timestamp
+        icon: mdi:clock-check-outline
+        availability: >-
+          {{ speed is defined and speed.status == 200
+             and speed.content.last_result is not none }}
+        state: "{{ speed.content.last_result.finished_at }}"
+    binary_sensor:
+      - name: Internet speed test running
+        unique_id: internet_speed_test_running
+        device_class: running
+        availability: "{{ speed is defined and speed.status == 200 }}"
+        state: "{{ speed.content.running }}"
