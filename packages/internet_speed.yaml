@@ -1,21 +1,26 @@
 # Internet speed: the latest speed test, and a button to run one now.
 #
-# The XB3 Telemetry app (homeassistant-apps, 0.3.0 and later) runs the tests:
+# The XB3 Telemetry app (homeassistant-apps, 0.4.0 and later) runs the tests:
 # every 30 minutes at 7 and 37 past the hour, against Cloudflare's speed-test
 # servers, from the Green's wired connection, so Wi-Fi is not in the path.
-# Its full record (every test, and the windows when a test filled the line) is
-# in VictoriaMetrics and VictoriaLogs. This package only brings the latest
-# result into Home Assistant for the phone, and starts tests on request.
+# Each direction keeps the line full for 10 seconds and is read every quarter
+# second. Sustained is the median reading, worst the slowest tenth. Its full
+# record (every reading of every test, and every slot that went without a
+# test, and why) is in VictoriaLogs and VictoriaMetrics. This package only
+# brings the latest result and the app's status into Home Assistant for the
+# phone, and starts tests on request.
 #
 # Why it exists: Jane sees large download or upload slowdowns that are separate
 # from packet loss, and wants a record of them (2026-10-31). Comparing a test
 # from the Green with one from her own device, run right after, tells the line
-# apart from the Wi-Fi. Use speed.cloudflare.com on the device: it uses the same
-# servers and method. Speedtest.net uses others, so its numbers differ.
+# apart from the Wi-Fi. Use speed.cloudflare.com on the device: same servers,
+# similar method. Speedtest.net uses others, so its numbers differ.
 #
+# Cloudflare refuses tests from an address that tests too often, so the app
+# allows 3 tests in any hour and waits as long as Cloudflare asks after a
+# refusal. The status sensor says which applies and when the next test may run.
 # The app takes commands only through Supervisor stdin, which needs no open
-# port. It runs one test at a time and logs a request made during a test as
-# rejected. Its read-only /speedtest page gives the latest result.
+# port, and its read-only /speedtest page gives the latest result.
 
 rest_command:
   xb3_speedtest_status:
@@ -27,9 +32,9 @@ script:
   internet_speed_test:
     alias: Internet - speed test now
     description: >-
-      Starts a speed test from the Green right away. It takes about half a
-      minute and fills the line while it runs. The result shows on the phone's
-      System tab when it finishes.
+      Starts a speed test from the Green right away, if the hourly budget and
+      Cloudflare allow it. It takes about 25 seconds and fills the line while
+      it runs. The result shows on the phone's System tab when it finishes.
     icon: mdi:speedometer
     mode: single
     sequence:
@@ -41,9 +46,9 @@ script:
             id: "ha-{{ now().strftime('%Y%m%d-%H%M%S') }}"
 
 template:
-  # Reads the app's latest result every 20 seconds. continue_on_error: while
-  # the app restarts or updates, a failed read leaves the sensors unavailable
-  # instead of raising an error.
+  # Reads the app's summary every 20 seconds. continue_on_error: while the app
+  # restarts or updates, a failed read leaves the sensors unavailable instead
+  # of raising an error.
   - triggers:
       - trigger: time_pattern
         seconds: "/20"
@@ -60,39 +65,60 @@ template:
         device_class: data_rate
         state_class: measurement
         icon: mdi:download
-        availability: >-
+        availability: &has_result >-
           {{ speed is defined and speed.status == 200
              and speed.content.last_result is not none }}
-        state: "{{ speed.content.last_result.download_mbps }}"
+        state: "{{ speed.content.last_result.download.sustained_mbps }}"
       - name: Internet upload speed
         unique_id: internet_upload_speed
         unit_of_measurement: Mbit/s
         device_class: data_rate
         state_class: measurement
         icon: mdi:upload
-        availability: >-
-          {{ speed is defined and speed.status == 200
-             and speed.content.last_result is not none }}
-        state: "{{ speed.content.last_result.upload_mbps }}"
-      - name: Internet speed test ping
-        unique_id: internet_speed_test_ping
-        unit_of_measurement: ms
-        device_class: duration
+        availability: *has_result
+        state: "{{ speed.content.last_result.upload.sustained_mbps }}"
+      - name: Internet download speed worst moment
+        unique_id: internet_download_speed_worst
+        unit_of_measurement: Mbit/s
+        device_class: data_rate
         state_class: measurement
-        icon: mdi:timer-outline
-        availability: >-
-          {{ speed is defined and speed.status == 200
-             and speed.content.last_result is not none
-             and speed.content.last_result.idle_latency_ms is not none }}
-        state: "{{ speed.content.last_result.idle_latency_ms | round(0) }}"
+        icon: mdi:download-off-outline
+        availability: *has_result
+        state: "{{ speed.content.last_result.download.worst_mbps }}"
+      - name: Internet upload speed worst moment
+        unique_id: internet_upload_speed_worst
+        unit_of_measurement: Mbit/s
+        device_class: data_rate
+        state_class: measurement
+        icon: mdi:upload-off-outline
+        availability: *has_result
+        state: "{{ speed.content.last_result.upload.worst_mbps }}"
       - name: Internet speed tested
         unique_id: internet_speed_tested
         device_class: timestamp
         icon: mdi:clock-check-outline
-        availability: >-
-          {{ speed is defined and speed.status == 200
-             and speed.content.last_result is not none }}
+        availability: *has_result
         state: "{{ speed.content.last_result.finished_at }}"
+      # Ready, Running, or why a test cannot start now and when it can.
+      - name: Internet speed test status
+        unique_id: internet_speed_test_status
+        icon: mdi:speedometer
+        availability: "{{ speed is defined and speed.status == 200 }}"
+        state: >-
+          {%- set s = speed.content -%}
+          {%- set at = (s.next_allowed_at | as_datetime | as_local)
+                .strftime('%I:%M %p') | regex_replace('^0', '')
+                if s.next_allowed_at else '' -%}
+          {%- if s.status == 'running' -%}Running
+          {%- elif s.status == 'rate_limited' -%}Cloudflare says wait until {{ at }}
+          {%- elif s.status == 'over_budget' -%}Hourly limit, next at {{ at }}
+          {%- else -%}Ready
+          {%- endif -%}
+        attributes:
+          last_attempt: >-
+            {{ speed.content.last_attempt.outcome
+               if speed.content.last_attempt else none }}
+          tests_last_hour: "{{ speed.content.tests_last_hour }}"
     binary_sensor:
       - name: Internet speed test running
         unique_id: internet_speed_test_running
