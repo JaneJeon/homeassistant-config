@@ -962,9 +962,10 @@
   mode: single
 - id: '1789903611981'
   alias: Alert - Paperless pipeline service down
-  description: Warn Jane if either Paperless-ngx or the Samba ingest service remains
-    stopped or unavailable for five minutes. New paper must not be shredded while
-    this warning is active.
+  description: Warn Jane if Paperless-ngx, the Samba ingest service or the Paperless
+    Intake app remains stopped or unavailable for five minutes. New paper must not
+    be shredded while this warning is active. Paperless Intake's Running sensor is
+    disabled by default and must be enabled for this to cover it.
   triggers:
   - platform: state
     entity_id: binary_sensor.paperless_ngx_running
@@ -982,6 +983,14 @@
     entity_id: binary_sensor.samba_share_running
     to: unavailable
     for: 00:05:00
+  - platform: state
+    entity_id: binary_sensor.paperless_intake_running
+    to: 'off'
+    for: 00:05:00
+  - platform: state
+    entity_id: binary_sensor.paperless_intake_running
+    to: unavailable
+    for: 00:05:00
   actions:
   - action: persistent_notification.create
     data:
@@ -989,7 +998,7 @@
       title: Paperless mail pipeline unavailable
       message: '{{ trigger.to_state.name }} has been {{ trigger.to_state.state }}
         for five minutes. Keep physical mail and do not clear the pending-shred tray
-        until both Paperless-ngx and Samba are running again.'
+        until Paperless-ngx, Samba and Paperless Intake are all running again.'
   - action: telegram_bot.send_message
     data:
       chat_id: 7054392448
@@ -998,12 +1007,12 @@
 
         {{ trigger.to_state.name }} has been {{ trigger.to_state.state }} for five
         minutes. Keep physical mail and do not clear the pending-shred tray until
-        both services recover.'
+        all three services recover.'
   mode: single
 - id: '1789903617200'
   alias: Resolve - Paperless pipeline services recovered
-  description: Clear the pipeline outage warning when both Paperless-ngx and Samba
-    are running again. Only after the outage warning actually went out, so a one-second
+  description: Clear the pipeline outage warning when Paperless-ngx, Samba and Paperless
+    Intake are all running again. Only after the outage warning actually went out, so a one-second
     blip (Home Assistant briefly reloading its Supervisor connection, which makes every
     app's Running sensor go unavailable and back) does not send a "recovered" message
     for an outage nobody was told about.
@@ -1014,12 +1023,18 @@
   - platform: state
     entity_id: binary_sensor.samba_share_running
     to: 'on'
+  - platform: state
+    entity_id: binary_sensor.paperless_intake_running
+    to: 'on'
   conditions:
   - condition: state
     entity_id: binary_sensor.paperless_ngx_running
     state: 'on'
   - condition: state
     entity_id: binary_sensor.samba_share_running
+    state: 'on'
+  - condition: state
+    entity_id: binary_sensor.paperless_intake_running
     state: 'on'
   - condition: template
     value_template: >-
@@ -1036,13 +1051,14 @@
       message: '✅ Paperless mail pipeline recovered
 
 
-        Paperless-ngx and Samba are both running again.'
+        Paperless-ngx, Samba and Paperless Intake are all running again.'
   mode: single
 - id: '1789904405839'
   alias: Paperless - Track consume started
   description: Increment the local in-flight counter and start a 45-minute watchdog
-    when Paperless begins consuming a scanner PDF. Triggered only by the local Paperless
-    workflow webhook. 45 minutes because OCR runs one page at a time on the Green
+    when a scan starts. Called by the Paperless Intake app when it claims a scanner
+    PDF from the capture folder, and by the Paperless workflow when a PDF is dropped
+    into the consume folder by hand. Local webhook only. 45 minutes because OCR runs one page at a time on the Green
     (PAPERLESS_THREADS_PER_WORKER=1, set 2026-09-30 after an out-of-memory kill) and
     OCR speed is not a design constraint.
   triggers:
@@ -1064,8 +1080,12 @@
   mode: queued
 - id: '1789904407140'
   alias: Paperless - Track document added
-  description: 'Decrement the in-flight counter after Paperless adds a physical-mail
-    document, and stop the watchdog once nothing is in flight. It does NOT clear an
+  description: 'Decrement the in-flight counter when a scan finishes, and stop the
+    watchdog once nothing is in flight. Called by the Paperless Intake app when a scan
+    is committed, held or failed (holds and failures also alert through "Alert - Paperless
+    intake"), and by the Paperless workflow when a hand-dropped physical-mail document
+    is added. That workflow skips documents tagged Mail intake, so an app scan counts
+    once. It does NOT clear an
     already-reported failure: the webhooks carry no filename, so a later good scan
     cannot prove the failed one arrived. Jane (or an agent that has checked Paperless)
     clears it with the Acknowledge button. Changed 2026-09-30 after a stale count
@@ -1093,8 +1113,8 @@
   mode: queued
 - id: '1789904408407'
   alias: Alert - Paperless ingest did not finish
-  description: Warn Jane when a consume-folder PDF starts processing but no Physical
-    Mail document is added within 45 minutes. After warning, hand the unfinished count
+  description: Warn Jane when a scan starts (claimed by Paperless Intake, or dropped
+    into the consume folder by hand) but does not finish within 45 minutes. After warning, hand the unfinished count
     over to the persistent problem flag and reset the in-flight counter, so later
     scans are judged on their own and cannot re-fire this alert for an old failure.
     The flag and notification stay until the Acknowledge button is pressed. Preserve
@@ -1117,8 +1137,8 @@
       message: '{{ stuck }} scanner PDF(s) started processing about 45 minutes before
         {{ now().strftime(''%-I:%M %p on %b %-d'') }} and did not produce a Paperless
         document. Keep the physical originals and do not clear the pending-shred tray.
-        Check Paperless Tasks and the consume folder, then press Acknowledge Paperless
-        ingest problem once the document is in Paperless.'
+        Check Mail intake, Paperless Tasks and the consume folder, then press Acknowledge
+        Paperless ingest problem once the document is in Paperless.'
       notification_id: paperless_ingest_problem
       title: Paperless ingestion did not finish
   - action: telegram_bot.send_message
@@ -1136,6 +1156,79 @@
   mode: single
   variables:
     stuck: '{{ states(''counter.paperless_ingests_in_flight'') | int(0) }}'
+- id: '1793516336328'
+  alias: Alert - Paperless intake
+  description: Alerts from the Paperless Intake app. "held" means a check found a
+    gap, "failed" means the commit could not be confirmed, "waiting" means a scan is
+    stuck on something that needs Jane (configuration, an untested Paperless version,
+    a crashed worker), and "warning" means the original is safely in Paperless but
+    its searchable copy failed a check. "resolved" clears the notification once that
+    scan is committed or discarded. Messages carry the scan time, page count and problem,
+    never document text, because Telegram keeps bot chats on its servers.
+  triggers:
+  - allowed_methods:
+    - POST
+    local_only: true
+    platform: webhook
+    webhook_id: bbd89851-5a89-4848-bba2-7a5e4d70925e
+  conditions:
+  - condition: template
+    value_template: '{{ trigger.json is mapping and trigger.json.get(''source'') ==
+      ''paperless-intake'' and trigger.json.get(''kind'') in [''held'', ''failed'',
+      ''waiting'', ''warning'', ''resolved''] }}'
+  variables:
+    kind: '{{ trigger.json.kind }}'
+    gap: '{{ trigger.json.gap | default('''', true) }}'
+    notification_id: 'paperless_intake_{{ trigger.json.item | default(''scan'', true) }}'
+    scan: >-
+      {%- set at = as_datetime(trigger.json.scanned_at | default('', true), None) -%}
+      {%- set pages = trigger.json.pages | int(0) -%}
+      Scan from {{ as_local(at).strftime('%b %-d %-I:%M %p') if at else 'an unknown time' }}{{ (' (%d page%s)' % (pages, '' if pages == 1 else 's')) if pages > 0 else '' }}
+    title: >-
+      {{ {'held': 'Scan held: keep the paper',
+          'failed': 'Scan not confirmed in Paperless',
+          'waiting': 'Scan waiting',
+          'warning': 'Scan in Paperless, with a warning'}.get(kind, '') }}
+    body: >-
+      {%- if kind == 'held' -%}{{ scan }} is held: {{ gap }}. Keep this paper out of
+      the shred tray. Open Mail intake in Home Assistant.
+      {%- elif kind == 'failed' -%}{{ scan }} could not be confirmed in Paperless: {{ gap }}.
+      Keep this paper out of the shred tray. Open Mail intake in Home Assistant.
+      {%- elif kind == 'waiting' -%}{{ scan }} is waiting: {{ gap }}. It retries every
+      30 minutes. Keep this paper out of the shred tray until it is in Paperless. Open
+      Mail intake in Home Assistant.
+      {%- else -%}{{ scan }} is in Paperless and its original was checked byte for byte,
+      but {{ gap }}. The paper's safety doesn't depend on this. Its searchable copy
+      needs a look.{%- endif %}
+  actions:
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: '{{ kind == ''resolved'' }}'
+      sequence:
+      - action: persistent_notification.dismiss
+        data:
+          notification_id: '{{ notification_id }}'
+      - if:
+        - condition: template
+          value_template: '{{ gap == ''committed'' }}'
+        then:
+        - action: telegram_bot.send_message
+          data:
+            chat_id: 7054392448
+            message: "✅ Scan in Paperless\n\n{{ scan }} is in Paperless now."
+    default:
+    - action: persistent_notification.create
+      data:
+        notification_id: '{{ notification_id }}'
+        title: '{{ title }}'
+        message: '{{ body }}'
+    - action: telegram_bot.send_message
+      data:
+        chat_id: 7054392448
+        message: "{{ '⚠️' if kind == 'warning' else '❌' }} {{ title }}\n\n{{ body }}"
+  max: 20
+  mode: queued
 - id: '1789904409678'
   alias: Acknowledge - Paperless ingest problem
   description: Manual recovery control after Jane has inspected and resolved or removed
