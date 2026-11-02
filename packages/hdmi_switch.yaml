@@ -1,5 +1,5 @@
-# HDMI switch: which input the BZBGear switch is showing, and one switch per
-# input for the phone's Home tab.
+# HDMI switch: which input the BZBGear switch is showing, and a control for the
+# phone's Home tab.
 #
 # The BZBGear BG-8K-HS21AR (2 inputs, 1 output) sits between the screen and two
 # sources: input 1 is the Macs (through the KVM), input 2 is the Xbox. The
@@ -43,24 +43,21 @@ template:
           {%- set m = out | regex_findall('input HDMI ([12])') -%}
           {{ m[0] if m else none }}
 
-  # On when its input is the one showing. Turning one on switches to that
-  # input; turning it off switches to the other, since the switch has only two.
-  - switch:
-      - name: HDMI input 1
-        unique_id: hdmi_input_1
-        icon: mdi:laptop
+  # The control: one choice with two options, so the phone can draw it as a
+  # two-segment button with the showing input highlighted. Choosing an option
+  # runs that input's script; the sensor above then re-reads the switch.
+  - select:
+      - name: HDMI input
+        unique_id: hdmi_input_select
+        icon: mdi:video-input-hdmi
         availability: "{{ has_value('sensor.hdmi_input') }}"
-        state: "{{ is_state('sensor.hdmi_input', '1') }}"
-        turn_on:
-          - action: script.hdmi_switch_to_input_1
-        turn_off:
-          - action: script.hdmi_switch_to_input_2
-      - name: HDMI input 2
-        unique_id: hdmi_input_2
-        icon: mdi:microsoft-xbox
-        availability: "{{ has_value('sensor.hdmi_input') }}"
-        state: "{{ is_state('sensor.hdmi_input', '2') }}"
-        turn_on:
-          - action: script.hdmi_switch_to_input_2
-        turn_off:
-          - action: script.hdmi_switch_to_input_1
+        options: "{{ ['Macs', 'Xbox'] }}"
+        state: "{{ {'1': 'Macs', '2': 'Xbox'}.get(states('sensor.hdmi_input')) }}"
+        select_option:
+          - if:
+              - condition: template
+                value_template: "{{ option == 'Macs' }}"
+            then:
+              - action: script.hdmi_switch_to_input_1
+            else:
+              - action: script.hdmi_switch_to_input_2
