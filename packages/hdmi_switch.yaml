@@ -1,0 +1,66 @@
+# HDMI switch: which input the BZBGear switch is showing, and one switch per
+# input for the phone's Home tab.
+#
+# The BZBGear BG-8K-HS21AR (2 inputs, 1 output) sits between the screen and two
+# sources: input 1 is the Macs (through the KVM), input 2 is the Xbox. The
+# Green talks to it over RS-232 through scripts/bzbgear.sh. The switch never
+# reports on its own, so its input has to be asked for. The input can change
+# without Home Assistant (the switch's own button, its auto-switch, the IR
+# blaster), so asking is the only way to know.
+#
+# Why it exists: Jane wanted a control that shows which input is active and
+# switches to the other (2026-11-01).
+
+template:
+  # Asks the switch every 30 seconds, and again as soon as either switch script
+  # finishes, so a tap shows its result at once. A read that gets no answer
+  # leaves the sensor unavailable rather than showing the last value, so a
+  # disconnected switch cannot look fine. The sensor's state is 1 or 2.
+  - triggers:
+      - trigger: time_pattern
+        seconds: "/30"
+      - trigger: homeassistant
+        event: start
+      - trigger: state
+        entity_id:
+          - script.hdmi_switch_to_input_1
+          - script.hdmi_switch_to_input_2
+        to: "off"
+    actions:
+      - action: shell_command.bzbgear_get_input
+        continue_on_error: true
+        response_variable: reply
+    sensor:
+      - name: HDMI input
+        unique_id: hdmi_input
+        icon: mdi:video-input-hdmi
+        availability: >-
+          {{ reply is defined and reply.stdout is defined
+             and reply.stdout is search('input HDMI [12]') }}
+        state: >-
+          {%- set out = reply.stdout if reply is defined
+                and reply.stdout is defined else '' -%}
+          {%- set m = out | regex_findall('input HDMI ([12])') -%}
+          {{ m[0] if m else none }}
+
+  # On when its input is the one showing. Turning one on switches to that
+  # input; turning it off switches to the other, since the switch has only two.
+  - switch:
+      - name: HDMI input 1
+        unique_id: hdmi_input_1
+        icon: mdi:laptop
+        availability: "{{ has_value('sensor.hdmi_input') }}"
+        state: "{{ is_state('sensor.hdmi_input', '1') }}"
+        turn_on:
+          - action: script.hdmi_switch_to_input_1
+        turn_off:
+          - action: script.hdmi_switch_to_input_2
+      - name: HDMI input 2
+        unique_id: hdmi_input_2
+        icon: mdi:microsoft-xbox
+        availability: "{{ has_value('sensor.hdmi_input') }}"
+        state: "{{ is_state('sensor.hdmi_input', '2') }}"
+        turn_on:
+          - action: script.hdmi_switch_to_input_2
+        turn_off:
+          - action: script.hdmi_switch_to_input_1
