@@ -21,8 +21,9 @@
     action: switch.turn_off
   mode: single
 - id: '1752129532309'
-  alias: Living Room Light Off
-  description: ''
+  alias: Bedroom remote - button 1 short press - lower lamp
+  description: Switches the bedroom's lower lamp on or off. Button 1 is the bedroom
+    button, button 2 the whole-flat button (Jane, 2026-11-03).
   triggers:
   - domain: mqtt
     device_id: dca66d71f6557107cab2cf34b7e86956
@@ -35,7 +36,7 @@
     metadata: {}
     data: {}
     target:
-      device_id: fd3ecb4f85bb58fea366b4f10d6a5d69
+      entity_id: light.0xc02cedfffe7ce5e3
   mode: single
 - id: '1752368740368'
   alias: Intrusion Alert
@@ -179,7 +180,8 @@
   mode: single
 - id: '1753053751861'
   alias: Automatically turn on bedroom lights
-  description: ''
+  description: Turns on the upper lamp only. The lower lamp points down and is switched
+    by hand (Jane, 2026-11-03).
   triggers:
   - type: occupied
     device_id: 6916206b6d85e171b2ce2df0e522a12f
@@ -191,10 +193,6 @@
     after: 08:00:00
     before: 00:00:00
   actions:
-  - type: turn_on
-    device_id: fd3ecb4f85bb58fea366b4f10d6a5d69
-    entity_id: 4af0d850638c2b37ab902499a5281682
-    domain: light
   - type: turn_on
     device_id: ec5df59a5b5cacada7df472aca0f162b
     entity_id: 2bdffc80ddd7f15c20d3e3f93dd99f62
@@ -410,8 +408,9 @@
       entity_id: '{{ on_lights }}'
   mode: restart
 - id: '1782642243123'
-  alias: Toggle Living Room Light
-  description: ''
+  alias: Bedroom remote - button 1 long press - bedroom lamps
+  description: If either bedroom lamp is on, turns both off. If both are off, turns
+    both on. Both lamps go the same way, so a press never leaves one on and one off.
   triggers:
   - domain: mqtt
     device_id: dca66d71f6557107cab2cf34b7e86956
@@ -420,14 +419,53 @@
     trigger: device
   conditions: []
   actions:
-  - action: light.toggle
-    metadata: {}
-    target:
-      device_id:
-      - ec5df59a5b5cacada7df472aca0f162b
-      - 06b073924bf18860e2c771f3d77c20bf
-      - f3a1261449ff0006c23245f6bae59231
-    data: {}
+  - if:
+    - condition: state
+      entity_id:
+      - light.ikea_smart_light_bulb_upper
+      - light.0xc02cedfffe7ce5e3
+      state: 'off'
+    then:
+    - action: light.turn_on
+      target:
+        entity_id:
+        - light.ikea_smart_light_bulb_upper
+        - light.0xc02cedfffe7ce5e3
+    else:
+    - action: light.turn_off
+      target:
+        entity_id:
+        - light.ikea_smart_light_bulb_upper
+        - light.0xc02cedfffe7ce5e3
+  mode: single
+- id: '1793750400001'
+  alias: Bedroom remote - button 2 - all lights
+  description: If any lamp is on, runs Lights Off (all four lamps). If all are off,
+    runs Lights On (the three uplights, never the lower lamp, which points down).
+  triggers:
+  - domain: mqtt
+    device_id: dca66d71f6557107cab2cf34b7e86956
+    type: action
+    subtype: 2_short_release
+    trigger: device
+  conditions: []
+  actions:
+  - if:
+    - condition: state
+      entity_id:
+      - light.living_room_living_room_light_front_corner
+      - light.living_room_living_room_light_back_corner
+      - light.ikea_smart_light_bulb_upper
+      - light.0xc02cedfffe7ce5e3
+      state: 'off'
+    then:
+    - action: scene.turn_on
+      target:
+        entity_id: scene.lights_on
+    else:
+    - action: scene.turn_on
+      target:
+        entity_id: scene.lights_off
   mode: single
 - id: '1783926323927'
   alias: Automatically turn on lights in the morning

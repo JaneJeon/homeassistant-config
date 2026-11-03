@@ -20,4 +20,6 @@
       state: 'off'
     light.ikea_smart_light_bulb_upper:
       state: 'off'
+    light.0xc02cedfffe7ce5e3:
+      state: 'off'
   icon: mdi:lightbulb-group-off
