@@ -1,0 +1,100 @@
+# Plants: a Telegram reminder to water the tree dahlia, so it does not get
+# forgotten.
+#
+# The probe is an Ecowitt WH51 in the tree dahlia's big pot on the balcony,
+# read through the GW1100 gateway (sensor.gw1100b_wifi7e14_wh51_sensor, whole
+# percent, a new reading about every 70 seconds).
+#
+# Why below 42%: Jane's line (2026-11-12, "something like 41-42%"), checked
+# against the probe's history in VictoriaMetrics. On the evening of 2026-09-20
+# the readings changed level, from the high 30s to about 49, and earlier
+# readings do not compare. Since then the soil settles at 43 to 50% after a
+# watering, and Jane usually waters at 42 to 49%. It went below 42 seven times
+# by 2026-11-12, all in the early afternoon (1 to 3:30 pm), when the pot dries
+# fastest. Five were spells of about a day before a watering, bottoming at 36
+# to 40. Two dipped to 41 and were watered within two hours.
+#
+# Why back at 45% ends it: a watering pushes the reading to 46 or more at once,
+# and it settles at 43 or more. Once the reminder is off, only a reading below
+# 42 turns it on again, so a reading that wobbles by a point around 42 cannot
+# restart it.
+#
+# One known gap: every deploy reloads templates, and a reload forgets that the
+# reminder was on. If that happens while the soil sits at 42 to 44, the
+# reminder stops until the next reading below 42. In the history the soil never
+# rose into that band without a watering, so it has not mattered.
+
+template:
+  - binary_sensor:
+      - name: Tree dahlia needs water
+        unique_id: tree_dahlia_needs_water
+        icon: mdi:watering-can
+        availability: "{{ has_value('sensor.gw1100b_wifi7e14_wh51_sensor') }}"
+        state: >-
+          {% set m = states('sensor.gw1100b_wifi7e14_wh51_sensor') | float(0) %}
+          {{ m < 42 or (this.state == 'on' and m < 45) }}
+
+automation:
+  # One message when the soil first drops below 42%, then again every 4 hours,
+  # and when Jane gets home, until it is watered. Nothing between 9 pm and
+  # 8 am: a drop at night waits for the 8 am check.
+  #
+  # The first message of a dry spell needs no special case: the last one went
+  # out a day or more earlier, so the 4-hour gap has long passed. The check
+  # runs every 15 minutes and allows a minute's slack, so a repeat lands 4
+  # hours after the last one, not 4 hours 15.
+  #
+  # Getting home counts only after at least 30 minutes away, and only if no
+  # message went out in the last 30 minutes. The phone's location often flicks
+  # to home for a few minutes as Jane leaves in the morning, and that must not
+  # send one. Presence only adds a moment to remind; it never holds a reminder
+  # back, so a wrong location cannot silence this.
+  #
+  # The 15-minute check makes about 96 runs a day, so more traces are kept than
+  # the default 5, or a real send's trace would be gone within the hour.
+  - id: tree_dahlia_water_reminder
+    alias: Plants - water the tree dahlia
+    description: >-
+      Tells Jane on Telegram when the tree dahlia's soil is below 42%. Repeats
+      every 4 hours and when she gets home, 8 am to 9 pm, until the soil is
+      back at 45% or more.
+    mode: single
+    trace:
+      stored_traces: 100
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.tree_dahlia_needs_water
+        to: "on"
+      - trigger: time_pattern
+        minutes: "/15"
+      - trigger: state
+        entity_id: person.jane
+        to: home
+        id: home
+    conditions:
+      - condition: state
+        entity_id: binary_sensor.tree_dahlia_needs_water
+        state: "on"
+      - condition: time
+        after: "08:00:00"
+        before: "21:00:00"
+      - condition: template
+        value_template: >-
+          {% set last = state_attr(this.entity_id, 'last_triggered') %}
+          {% if trigger.id == 'home' %}
+            {{ trigger.from_state is not none
+               and trigger.to_state.last_changed - trigger.from_state.last_changed
+                 >= timedelta(minutes=30)
+               and (last is none or now() - last >= timedelta(minutes=30)) }}
+          {% else %}
+            {{ last is none or now() - last >= timedelta(hours=4, minutes=-1) }}
+          {% endif %}
+    actions:
+      - action: notify.send_message
+        target:
+          entity_id: notify.telegram_bot_7842566738_7054392448
+        data:
+          title: Water the tree dahlia
+          message: >-
+            The soil is at {{ states('sensor.gw1100b_wifi7e14_wh51_sensor') }}%.
+            Reminders stop once it's watered.
