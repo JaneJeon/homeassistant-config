@@ -1,0 +1,87 @@
+# Plants: a Telegram reminder to water the tree dahlia, so it does not get
+# forgotten.
+#
+# The probe is an Ecowitt WH51 in the tree dahlia's big pot on the balcony,
+# read through the GW1100 gateway (sensor.gw1100b_wifi7e14_wh51_sensor, whole
+# percent, a new reading about every 70 seconds).
+#
+# Why below 42%: Jane's line (2026-11-12, "something like 41-42%"), checked
+# against the probe's history in VictoriaMetrics. On 2026-09-20 the readings
+# changed level (33% jumped to 75% and settled near 49%), around when the plant
+# went into the big pot, so earlier readings do not compare. Since then the soil
+# settles at 44 to 50% after a watering, and Jane usually waters at 42 to 49%.
+# It went below 42 seven times by 2026-11-12. Five were dry spells of about a
+# day before a watering, with lows of 38 to 41. Two dipped to 41 and were
+# watered within two hours. Each started between 1:30 and 3:30 pm, when the pot
+# dries fastest.
+#
+# Why back at 45% ends it: a watering pushes the reading to 46 or more straight
+# away, and it settles at 43 or more. The gap between 42 and 45 stops a reading
+# that wobbles by a point around 42 from turning the reminder off and on again.
+
+template:
+  - binary_sensor:
+      - name: Tree dahlia needs water
+        unique_id: tree_dahlia_needs_water
+        icon: mdi:watering-can
+        availability: "{{ has_value('sensor.gw1100b_wifi7e14_wh51_sensor') }}"
+        state: >-
+          {% set m = states('sensor.gw1100b_wifi7e14_wh51_sensor') | float(0) %}
+          {{ m < 42 or (this.state == 'on' and m < 45) }}
+
+automation:
+  # One message when the soil first drops below 42%, then again every 4 hours,
+  # and when Jane gets home, until it is watered. Nothing between 9 pm and
+  # 8 am: a drop at night waits for the 8 am check.
+  #
+  # The first message of a dry spell needs no special case: the last one was
+  # sent days earlier, so the 4-hour gap has long passed. That also keeps a
+  # reload (every deploy recreates the binary sensor) from sending an extra one.
+  # Getting home sends one unless another went out in the last 30 minutes, so
+  # the phone's location flicking between home and away does not repeat it.
+  # Presence only adds a moment to remind; it never holds a reminder back, so a
+  # wrong location cannot silence this.
+  #
+  # continue_on_error: a failed send must not raise an automation error, which
+  # would set off the error monitor's own Telegram alert.
+  - id: tree_dahlia_water_reminder
+    alias: Plants - water the tree dahlia
+    description: >-
+      Tells Jane on Telegram when the tree dahlia's soil is below 42%. Repeats
+      every 4 hours and when she gets home, 8 am to 9 pm, until the soil is
+      back at 45% or more.
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.tree_dahlia_needs_water
+        to: "on"
+      - trigger: time_pattern
+        minutes: "/15"
+      - trigger: state
+        entity_id: person.jane
+        to: home
+        id: home
+    conditions:
+      - condition: state
+        entity_id: binary_sensor.tree_dahlia_needs_water
+        state: "on"
+      - condition: time
+        after: "08:00:00"
+        before: "21:00:00"
+      - condition: template
+        value_template: >-
+          {% set last = state_attr(this.entity_id, 'last_triggered') %}
+          {% set gap = timedelta(minutes=30) if trigger.id == 'home'
+             else timedelta(hours=4) %}
+          {{ last is none or now() - last >= gap }}
+    actions:
+      - action: notify.send_message
+        continue_on_error: true
+        target:
+          entity_id: notify.telegram_bot_7842566738_7054392448
+        data:
+          title: Water the tree dahlia
+          message: >-
+            The soil is at {{ states('sensor.gw1100b_wifi7e14_wh51_sensor') }}%,
+            below 42%. This repeats every 4 hours from 8 am to 9 pm, and when
+            you get home, until the soil is back at 45%.
