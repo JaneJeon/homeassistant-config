@@ -1,5 +1,8 @@
 # Secrets. Never commit these.
 secrets.yaml
+# Copies of it made before editing it by hand (for example
+# secrets.yaml.before-cleanup). They hold the same real values.
+secrets.yaml.*
 esphome/secrets.yaml
 # Zigbee2MQTT's config holds the Zigbee network key (only present on older installs).
 zigbee2mqtt/
