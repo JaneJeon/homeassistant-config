@@ -56,7 +56,7 @@ Backup health uses `sensor.native_snapshot_backup_last_validated`. A completed u
 
 ## Alerts
 
-- Drift: `sensor.config_repo_drift` counts files on the Green that differ from this repo. Above zero for 30 minutes sends a Telegram alert: something was edited outside git.
+- Drift: `sensor.config_repo_drift` counts what on the Green differs from this repo. Its `changed` attribute lists tracked files that differ (edited, deleted or renamed), and `untracked` lists files git does not know. Above zero for 30 minutes means something was edited outside git, and the Telegram alert names the files. If git itself fails, the sensor goes unknown, and after 30 minutes the alert says the drift check is not working.
 - Git pull stopped: if the app has been stopped for 5 minutes, HA starts it again. If it is still stopped after 30 minutes, a Telegram alert goes out.
 - Behind: `sensor.config_repo_head` differing from `sensor.config_repo_github_master` for 15 minutes sends a Telegram alert: pulls are failing.
 
