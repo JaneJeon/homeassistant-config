@@ -24,8 +24,29 @@ command_line:
   - sensor:
       name: Config repo drift
       unique_id: config_repo_drift
-      # Tracked files changed on the Green plus untracked files that are not gitignored.
-      command: "git -C /config status --porcelain | wc -l"
+      # Tracked files changed on the Green plus untracked files that are not
+      # gitignored. The state is how many; the attributes say which, so the
+      # alert can name them and nobody has to log in to find out. Changed means
+      # a tracked file was edited; untracked means a file git does not know.
+      # If git itself fails, the command exits 1 and the sensor goes unknown
+      # instead of reading 0, so a broken check cannot look like no drift.
+      command: |-
+        s=$(git -C /config status --porcelain) || exit 1
+        printf '%s\n' "$s" | awk '
+          length($0) == 0 { next }
+          {
+            p = substr($0, 4)
+            gsub(/\\/, "\\\\\\\\", p)
+            gsub(/"/, "\\\"", p)
+            if (substr($0, 1, 2) == "??") u = u (u == "" ? "" : ",") "\"" p "\""
+            else c = c (c == "" ? "" : ",") "\"" p "\""
+            n++
+          }
+          END { printf "{\"count\":%d,\"changed\":[%s],\"untracked\":[%s]}\n", n, c, u }'
+      value_template: "{{ value_json.count }}"
+      json_attributes:
+        - changed
+        - untracked
       unit_of_measurement: files
       scan_interval: 600
   - sensor:
@@ -87,8 +108,12 @@ automation:
         data:
           title: Config drift
           message: >-
+            {% set changed = state_attr('sensor.config_repo_drift', 'changed') or [] %}
+            {% set untracked = state_attr('sensor.config_repo_drift', 'untracked') or [] %}
             {{ states('sensor.config_repo_drift') }} file(s) on the Green differ
             from the homeassistant-config repo. Something was edited outside git.
+            {% if changed %}Edited: {{ changed | join(', ') }}.{% endif %}
+            {% if untracked %}Not in git: {{ untracked | join(', ') }}.{% endif %}
 
   - id: config_repo_lag_alert
     alias: Config repo - behind GitHub alert
