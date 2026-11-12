@@ -24,18 +24,22 @@ command_line:
   - sensor:
       name: Config repo drift
       unique_id: config_repo_drift
-      # Tracked files changed on the Green plus untracked files that are not
-      # gitignored. The state is how many; the attributes say which, so the
-      # alert can name them and nobody has to log in to find out. Changed means
-      # a tracked file was edited; untracked means a file git does not know.
+      # How many paths on the Green differ from the repo (git status lines, so
+      # a new folder counts once), plus which ones, so the alert can name them
+      # and nobody has to log in to find out:
+      #   changed: tracked files that differ (edited, deleted or renamed)
+      #   untracked: files git does not know and does not ignore
+      # Names with spaces or unusual characters appear in git's quoted form.
       # If git itself fails, the command exits 1 and the sensor goes unknown
-      # instead of reading 0, so a broken check cannot look like no drift.
+      # instead of reading 0. The drift alert below then says the check is
+      # broken.
       command: |-
         s=$(git -C /config status --porcelain) || exit 1
         printf '%s\n' "$s" | awk '
           length($0) == 0 { next }
           {
             p = substr($0, 4)
+            # Escape backslashes, then double quotes, so the output is JSON.
             gsub(/\\/, "\\\\\\\\", p)
             gsub(/"/, "\\\"", p)
             if (substr($0, 1, 2) == "??") u = u (u == "" ? "" : ",") "\"" p "\""
@@ -88,7 +92,8 @@ automation:
     alias: Config repo - drift alert
     description: >-
       Tells Jane when the config on the Green has differed from the GitHub repo
-      for 30 minutes, which means something was edited outside the repo.
+      for 30 minutes, which means something was edited outside the repo, or
+      when the drift check itself has not worked for 30 minutes.
     mode: single
     triggers:
       - trigger: time_pattern
@@ -98,7 +103,8 @@ automation:
         value_template: >-
           {% set s = states.sensor.config_repo_drift %}
           {% set last = state_attr(this.entity_id, 'last_triggered') %}
-          {{ s is not none and s.state | int(0) > 0
+          {{ s is not none
+             and (s.state | int(0) > 0 or not is_number(s.state))
              and now() - s.last_changed > timedelta(minutes=30)
              and (last is none or now() - last > timedelta(hours=12)) }}
     actions:
@@ -108,12 +114,18 @@ automation:
         data:
           title: Config drift
           message: >-
+            {% set s = states('sensor.config_repo_drift') %}
             {% set changed = state_attr('sensor.config_repo_drift', 'changed') or [] %}
             {% set untracked = state_attr('sensor.config_repo_drift', 'untracked') or [] %}
-            {{ states('sensor.config_repo_drift') }} file(s) on the Green differ
-            from the homeassistant-config repo. Something was edited outside git.
-            {% if changed %}Edited: {{ changed | join(', ') }}.{% endif %}
-            {% if untracked %}Not in git: {{ untracked | join(', ') }}.{% endif %}
+            {% if not is_number(s) %}
+            The drift check is not working: git status failed on the Green, so
+            drift cannot be seen. Home Assistant's log has the error.
+            {% else %}
+            {% set parts = [s ~ ' file(s) on the Green differ from the homeassistant-config repo. Something was edited outside git.'] %}
+            {% if changed %}{% set parts = parts + ['Differ from the repo: ' ~ changed | join(', ') ~ '.'] %}{% endif %}
+            {% if untracked %}{% set parts = parts + ['Not in the repo: ' ~ untracked | join(', ') ~ '.'] %}{% endif %}
+            {{ parts | join(' ') }}
+            {% endif %}
 
   - id: config_repo_lag_alert
     alias: Config repo - behind GitHub alert
