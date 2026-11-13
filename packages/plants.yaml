@@ -25,6 +25,20 @@
 # rose into that band without a watering, so it has not mattered.
 
 template:
+  # When Jane last left home, for the getting-home reminder below. It records
+  # leaving home itself, not the state just before she returns: a return from
+  # work goes Work, then a few minutes of not_home, then home.
+  - triggers:
+      - trigger: state
+        entity_id: person.jane
+        from: home
+    sensor:
+      - name: Jane left home
+        unique_id: jane_left_home
+        device_class: timestamp
+        icon: mdi:home-export-outline
+        state: "{{ now().isoformat() }}"
+
   - binary_sensor:
       - name: Tree dahlia needs water
         unique_id: tree_dahlia_needs_water
@@ -40,18 +54,19 @@ automation:
   # 8 am: a drop at night waits for the 8 am check.
   #
   # The first message of a dry spell needs no special case: the last one went
-  # out a day or more earlier, so the 4-hour gap has long passed. The check
-  # runs every 15 minutes and allows a minute's slack, so a repeat lands 4
-  # hours after the last one, not 4 hours 15.
+  # out a day or more earlier, so the 4-hour gap has long passed. A repeat goes
+  # out at the first 15-minute check at least 4 hours after the last message
+  # (a minute's slack keeps it from missing the check right on 4 hours).
   #
-  # Getting home counts only after at least 30 minutes away, and only if no
-  # message went out in the last 30 minutes. The phone's location often flicks
-  # to home for a few minutes as Jane leaves in the morning, and that must not
-  # send one. Presence only adds a moment to remind; it never holds a reminder
-  # back, so a wrong location cannot silence this.
+  # Getting home counts only if Jane left home at least 30 minutes earlier
+  # (sensor.jane_left_home), and only if no message went out in the last 30
+  # minutes. The phone's location often flicks to home for a few minutes as
+  # she leaves in the morning, and that must not send one. Presence only adds
+  # a moment to remind; it never holds a reminder back, so a wrong location
+  # cannot silence this.
   #
   # The 15-minute check makes about 96 runs a day, so more traces are kept than
-  # the default 5, or a real send's trace would be gone within the hour.
+  # the default 5, which would last only about 75 minutes.
   - id: tree_dahlia_water_reminder
     alias: Plants - water the tree dahlia
     description: >-
@@ -82,9 +97,8 @@ automation:
         value_template: >-
           {% set last = state_attr(this.entity_id, 'last_triggered') %}
           {% if trigger.id == 'home' %}
-            {{ trigger.from_state is not none
-               and trigger.to_state.last_changed - trigger.from_state.last_changed
-                 >= timedelta(minutes=30)
+            {% set left = states('sensor.jane_left_home') | as_datetime(none) %}
+            {{ left is not none and now() - left >= timedelta(minutes=30)
                and (last is none or now() - last >= timedelta(minutes=30)) }}
           {% else %}
             {{ last is none or now() - last >= timedelta(hours=4, minutes=-1) }}
