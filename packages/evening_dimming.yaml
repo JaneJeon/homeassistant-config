@@ -1,0 +1,122 @@
+# Evening dimming: one switch, for the whole flat, that turns Adaptive
+# Lighting's brightness control on or off.
+#
+# Adaptive Lighting (AL) runs one instance per room, and each has a brightness
+# switch. With it on, AL dims the lamps with the sun: full brightness until
+# sunset, then down to 1% at solar midnight (about 11:55 pm in November). That
+# suits winding down. It does not suit an evening that still has work in it.
+#
+# Why it exists: at 11 pm on 2026-11-20 the lamps were at 2%, and Jane said
+# they were far too dark. She said she doesn't mind the brightness control,
+# but it should be togglable.
+#
+# - On: AL sets brightness in both rooms. A change made by hand lasts until
+#   AL's next pass, at most 5 minutes later.
+# - Off: brightness is set by hand. Lamps that are on go to the level below, so
+#   switching it off visibly does something. Lamps that are off come back at
+#   their last level.
+# - It switches itself back on at sunrise, so an evening of work does not carry
+#   over into the next evening. At sunrise AL's brightness is already 100%, so
+#   nothing visibly changes then.
+#
+# The state is read from AL's own two switches, so this switch and AL cannot
+# disagree. Colour is untouched: AL keeps the bedroom's colour, and the warm-end
+# correction automation keeps the living room's. Zoom mode marks its key light
+# as manually controlled for the call, so this does not dim it (automations.yaml).
+
+template:
+  - switch:
+      - name: Evening dimming
+        unique_id: evening_dimming
+        icon: mdi:weather-night
+        state: >-
+          {{ is_state('switch.adaptive_lighting_adapt_brightness_living_room', 'on')
+             and is_state('switch.adaptive_lighting_adapt_brightness_bedroom', 'on') }}
+        turn_on:
+          - action: switch.turn_on
+            target:
+              entity_id:
+                - switch.adaptive_lighting_adapt_brightness_living_room
+                - switch.adaptive_lighting_adapt_brightness_bedroom
+          # Apply now rather than at AL's next pass, up to 5 minutes away. The
+          # living room is skipped during a call, because apply overrides
+          # manual control and would dim Zoom mode's key light.
+          - if:
+              - condition: state
+                entity_id: input_boolean.zoom_mode
+                state: "off"
+            then:
+              - action: adaptive_lighting.apply
+                continue_on_error: true
+                data:
+                  entity_id: switch.adaptive_lighting_living_room
+                  adapt_brightness: true
+                  adapt_color: false
+                  turn_on_lights: false
+                  transition: 2
+          - action: adaptive_lighting.apply
+            continue_on_error: true
+            data:
+              entity_id: switch.adaptive_lighting_bedroom
+              adapt_brightness: true
+              adapt_color: true
+              turn_on_lights: false
+              transition: 2
+        turn_off:
+          - action: switch.turn_off
+            target:
+              entity_id:
+                - switch.adaptive_lighting_adapt_brightness_living_room
+                - switch.adaptive_lighting_adapt_brightness_bedroom
+          - variables:
+              lamps_on: >-
+                {{ ['light.living_room_living_room_light_front_corner',
+                    'light.living_room_living_room_light_back_corner',
+                    'light.ikea_smart_light_bulb_upper',
+                    'light.0xc02cedfffe7ce5e3']
+                   | select('is_state', 'on') | list }}
+          # Zoom mode's key light keeps its call brightness.
+          - variables:
+              lamps_to_raise: >-
+                {{ lamps_on | reject('eq', 'light.living_room_living_room_light_front_corner')
+                   | list if is_state('input_boolean.zoom_mode', 'on') else lamps_on }}
+          - if:
+              - condition: template
+                value_template: "{{ lamps_to_raise | count > 0 }}"
+            then:
+              - action: light.turn_on
+                continue_on_error: true
+                target:
+                  entity_id: "{{ lamps_to_raise }}"
+                data:
+                  # Jane's everyday level (noted 2026-08-17). 100% was too
+                  # bright for her on the evening of 2026-11-20.
+                  brightness_pct: 85
+                  transition: 2
+
+automation:
+  - id: evening_dimming_back_on
+    alias: Evening dimming - back on in the morning
+    description: >-
+      Switches Evening dimming back on at sunrise, so a night it was switched
+      off for work does not carry over to the next evening. Also runs when Home
+      Assistant starts in daylight, in case it was down at sunrise.
+    triggers:
+      - trigger: sun
+        event: sunrise
+      - trigger: homeassistant
+        event: start
+    conditions:
+      # The sun's own state can flip a moment after the sunrise trigger, so
+      # the daylight check applies only to the start trigger.
+      - condition: template
+        value_template: >-
+          {{ trigger.platform == 'sun' or is_state('sun.sun', 'above_horizon') }}
+      - condition: state
+        entity_id: switch.evening_dimming
+        state: "off"
+    actions:
+      - action: switch.turn_on
+        target:
+          entity_id: switch.evening_dimming
+    mode: single
