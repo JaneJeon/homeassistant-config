@@ -1,0 +1,33 @@
+# Apps: one entity that says whether every app is running, for the phone's
+# System tab.
+#
+# The System tab used to show this as a markdown card. Jane's rule for the
+# Overview dashboard (2026-11-20) is that every thing on it is an entity, so a
+# tap opens its details and history. This sensor carries what the card showed.
+#
+# It reads the Supervisor's own list of apps (every binary sensor of the
+# Supervisor integration), so a new app is covered before anyone adds it to the
+# Apps tab. It adds two problems the app list cannot see: the Samba share not
+# answering, and a Paperless ingest problem.
+
+template:
+  - sensor:
+      - name: Apps
+        unique_id: apps_status
+        state: >-
+          {%- set apps = integration_entities('hassio')
+                | select('match', 'binary_sensor\.') | list -%}
+          {%- set ns = namespace(p=[]) -%}
+          {%- for e in apps if not is_state(e, 'on') -%}
+            {%- set ns.p = ns.p + [device_attr(e, 'name') ~ ' not running'] -%}
+          {%- endfor -%}
+          {%- if not is_state('binary_sensor.samba_ipv4_listener', 'on') -%}
+            {%- set ns.p = ns.p + ['Samba share not answering'] -%}
+          {%- endif -%}
+          {%- if is_state('input_boolean.paperless_ingest_problem', 'on') -%}
+            {%- set ns.p = ns.p + ['Paperless ingest problem'] -%}
+          {%- endif -%}
+          {{ ('All ' ~ apps | count ~ ' running' if ns.p | count == 0
+              else ns.p | join(', '))[:255] }}
+        icon: >-
+          {{ 'mdi:puzzle-check' if this.state is match('All ') else 'mdi:puzzle-remove' }}
