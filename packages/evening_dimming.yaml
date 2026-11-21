@@ -12,9 +12,9 @@
 #
 # - On: AL sets brightness in both rooms. A change made by hand lasts until
 #   AL's next pass, at most 5 minutes later.
-# - Off: brightness is set by hand. Lamps that are on go to the level below, so
-#   switching it off visibly does something. Lamps that are off come back at
-#   their last level.
+# - Off: brightness is set by hand. The living room lamps that are on go to
+#   their working levels (below), so switching it off visibly does something.
+#   Lamps that are off come back at their last level.
 # - It switches itself back on at sunrise, so an evening of work does not carry
 #   over into the next evening. At sunrise AL's brightness is already 100%, so
 #   nothing visibly changes then.
@@ -68,29 +68,39 @@ template:
               entity_id:
                 - switch.adaptive_lighting_adapt_brightness_living_room
                 - switch.adaptive_lighting_adapt_brightness_bedroom
-          - variables:
-              lamps_on: >-
-                {{ ['light.living_room_living_room_light_front_corner',
-                    'light.living_room_living_room_light_back_corner',
-                    'light.ikea_smart_light_bulb_upper',
-                    'light.0xc02cedfffe7ce5e3']
-                   | select('is_state', 'on') | list }}
-          # Zoom mode's key light keeps its call brightness.
-          - variables:
-              lamps_to_raise: >-
-                {{ lamps_on | reject('eq', 'light.living_room_living_room_light_front_corner')
-                   | list if is_state('input_boolean.zoom_mode', 'on') else lamps_on }}
+          # Off means work, which happens in the living room. Each lamp there
+          # goes to its own level, by how its light reaches Jane (2026-11-20):
+          # the back lamp bounces off the ceiling, so full is fine; the front
+          # lamp is a point source near her face at the desk, so it stays at
+          # her everyday 85% (noted 2026-08-17). During a call the front lamp
+          # is Zoom mode's key light and keeps its call brightness. The
+          # bedroom lamps are left alone: full brightness from bed is too much,
+          # and the lower lamp points down.
           - if:
-              - condition: template
-                value_template: "{{ lamps_to_raise | count > 0 }}"
+              - condition: state
+                entity_id: light.living_room_living_room_light_back_corner
+                state: "on"
             then:
               - action: light.turn_on
                 continue_on_error: true
                 target:
-                  entity_id: "{{ lamps_to_raise }}"
+                  entity_id: light.living_room_living_room_light_back_corner
                 data:
-                  # Jane's everyday level (noted 2026-08-17). 100% was too
-                  # bright for her on the evening of 2026-11-20.
+                  brightness_pct: 100
+                  transition: 2
+          - if:
+              - condition: state
+                entity_id: light.living_room_living_room_light_front_corner
+                state: "on"
+              - condition: state
+                entity_id: input_boolean.zoom_mode
+                state: "off"
+            then:
+              - action: light.turn_on
+                continue_on_error: true
+                target:
+                  entity_id: light.living_room_living_room_light_front_corner
+                data:
                   brightness_pct: 85
                   transition: 2
 
