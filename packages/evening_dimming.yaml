@@ -12,8 +12,8 @@
 #
 # - On: AL sets brightness in both rooms. A change made by hand lasts until
 #   AL's next pass, at most 5 minutes later.
-# - Off: brightness is set by hand. The living room lamps that are on go to
-#   their working levels (below), so switching it off visibly does something.
+# - Off: brightness is set by hand. The lamps that are on go to their working
+#   levels (below), so switching it off visibly does something.
 #   Lamps that are off come back at their last level.
 # - It switches itself back on at sunrise, so an evening of work does not carry
 #   over into the next evening. At sunrise AL's brightness is already 100%, so
@@ -68,23 +68,27 @@ template:
               entity_id:
                 - switch.adaptive_lighting_adapt_brightness_living_room
                 - switch.adaptive_lighting_adapt_brightness_bedroom
-          # Off means work, which happens in the living room. Each lamp there
-          # goes to its own level, by how its light reaches Jane (2026-11-20):
-          # the back lamp bounces off the ceiling, so full is fine; the front
-          # lamp is a point source near her face at the desk, so it stays at
-          # her everyday 85% (noted 2026-08-17). During a call the front lamp
-          # is Zoom mode's key light and keeps its call brightness. The
-          # bedroom lamps are left alone: full brightness from bed is too much,
-          # and the lower lamp points down.
+          # Off means work. Each lamp goes to its own level, by how its light
+          # reaches Jane (2026-11-20). The uplights bounce off the ceiling, so
+          # they go to full: the living room back lamp and the bedroom upper
+          # lamp, which also make up for the front lamp being lower. The front
+          # lamp is a point source near her face at the desk, so it goes to
+          # 60%; she found 100% and then 85% too bright. During a call it is
+          # Zoom mode's key light and keeps its call brightness. The bedroom
+          # lower lamp points down and is left alone.
+          - variables:
+              uplights_on: >-
+                {{ ['light.living_room_living_room_light_back_corner',
+                    'light.ikea_smart_light_bulb_upper']
+                   | select('is_state', 'on') | list }}
           - if:
-              - condition: state
-                entity_id: light.living_room_living_room_light_back_corner
-                state: "on"
+              - condition: template
+                value_template: "{{ uplights_on | count > 0 }}"
             then:
               - action: light.turn_on
                 continue_on_error: true
                 target:
-                  entity_id: light.living_room_living_room_light_back_corner
+                  entity_id: "{{ uplights_on }}"
                 data:
                   brightness_pct: 100
                   transition: 2
@@ -101,7 +105,7 @@ template:
                 target:
                   entity_id: light.living_room_living_room_light_front_corner
                 data:
-                  brightness_pct: 85
+                  brightness_pct: 60
                   transition: 2
 
 automation:
