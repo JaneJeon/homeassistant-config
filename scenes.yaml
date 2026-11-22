@@ -3,7 +3,7 @@
   entities:
     light.living_room_living_room_light_front_corner:
       state: 'on'
-      brightness: 255
+      brightness: 153
     light.living_room_living_room_light_back_corner:
       state: 'on'
       brightness: 255
