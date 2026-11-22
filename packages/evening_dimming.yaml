@@ -1,28 +1,96 @@
-# Evening dimming: one switch, for the whole flat, that turns Adaptive
-# Lighting's brightness control on or off.
+# Evening dimming: one switch, for the whole flat, that says whether lamp
+# brightness follows the sun or stays put.
 #
-# Adaptive Lighting (AL) runs one instance per room, and each has a brightness
-# switch. With it on, AL dims the lamps with the sun: full brightness until
-# sunset, then down to 1% at solar midnight (about 11:55 pm in November). That
-# suits winding down. It does not suit an evening that still has work in it.
+# Every lamp has a ceiling, the most it gives outside a call:
+#   - Living room back and bedroom upper are uplights that bounce off the
+#     ceiling. 100%.
+#   - Living room front is a point source near Jane's face at the desk. 60%.
+#     She found 100% and then 85% too bright (2026-11-20).
+#   - Bedroom lower points down. Adaptive Lighting and the remote look after it.
 #
-# Why it exists: at 11 pm on 2026-11-20 the lamps were at 2%, and Jane said
-# they were far too dark. She said she doesn't mind the brightness control,
-# but it should be togglable.
-#
-# - On: AL sets brightness in both rooms. A change made by hand lasts until
-#   AL's next pass, at most 5 minutes later.
-# - Off: brightness is set by hand. The lamps that are on go to their working
-#   levels (below), so switching it off visibly does something.
-#   Lamps that are off come back at their last level.
+# - On: each lamp sits at its ceiling until sunset, then falls with the sun to
+#   1% at solar midnight (about 11:55 pm in November). A change made by hand
+#   lasts until the next pass, at most 5 minutes later.
+# - Off: each lamp that is on goes to its ceiling and stays there. Brightness
+#   is then set by hand. Lamps that are off come back at their last level.
 # - It switches itself back on at sunrise, so an evening of work does not carry
-#   over into the next evening. At sunrise AL's brightness is already 100%, so
-#   nothing visibly changes then.
+#   over into the next evening.
 #
-# The state is read from AL's own two switches, so this switch and AL cannot
-# disagree. Colour is untouched: AL keeps the bedroom's colour, and the warm-end
-# correction automation keeps the living room's. Zoom mode marks its key light
-# as manually controlled for the call, so this does not dim it (automations.yaml).
+# Who sets brightness:
+#   - Bedroom: Adaptive Lighting (AL) itself. This switch is AL's bedroom
+#     brightness switch under another name, so the two cannot disagree.
+#   - Living room: this package. AL's living room instance only works out the
+#     curve. Its brightness_pct attribute is refreshed every 5 minutes whether
+#     or not its own switches are on. The script below applies that value,
+#     scaled to each lamp's ceiling. AL cannot give two lamps in one instance
+#     different ceilings, so AL's own living room brightness switch stays off.
+#     The warm-end colour correction (automations.yaml) rides AL's colour curve
+#     the same way.
+#
+# Why the living room is done here: until 2026-11-21 AL drove both living room
+# lamps to one level, and the front lamp's 60% existed only in the "off"
+# branch. In daylight the front lamp sat at 100% unless this switch was off,
+# and switching it on at 5:30 pm took the lamp from 60% up to 84%. The switch
+# called dimming made the lamp brighter.
+#
+# Cost of doing it here: AL no longer rewrites a living room turn-on, so a lamp
+# comes on at its last level and is corrected about a second later.
+#
+# Zoom mode (automations.yaml) makes the front lamp its key light at 100%. The
+# script skips the front lamp while Zoom mode is on.
+
+script:
+  living_room_brightness:
+    alias: Living room brightness - set to a share of each lamp's ceiling
+    description: >-
+      Sets the living room lamps that are on to a share of their ceilings. Pass
+      100 to hold each lamp at its ceiling, or Adaptive Lighting's brightness_pct
+      to follow the sun. Skips the front lamp while Zoom mode is on.
+    mode: restart
+    fields:
+      level:
+        description: Share of each lamp's ceiling in percent, 1 to 100.
+        example: 100
+      transition:
+        description: Fade time in seconds.
+        example: 2
+    variables:
+      back_ceiling: 100
+      front_ceiling: 60
+    sequence:
+      - variables:
+          share: "{{ [[level | default(100, true) | float(100), 1] | max, 100] | min }}"
+          fade: "{{ transition | default(2, true) | float(2) }}"
+      - variables:
+          back_pct: "{{ [(share * back_ceiling / 100) | round(0) | int, 1] | max }}"
+          front_pct: "{{ [(share * front_ceiling / 100) | round(0) | int, 1] | max }}"
+      - if:
+          - condition: state
+            entity_id: light.living_room_living_room_light_back_corner
+            state: "on"
+        then:
+          - action: light.turn_on
+            continue_on_error: true
+            target:
+              entity_id: light.living_room_living_room_light_back_corner
+            data:
+              brightness_pct: "{{ back_pct }}"
+              transition: "{{ fade }}"
+      - if:
+          - condition: state
+            entity_id: light.living_room_living_room_light_front_corner
+            state: "on"
+          - condition: state
+            entity_id: input_boolean.zoom_mode
+            state: "off"
+        then:
+          - action: light.turn_on
+            continue_on_error: true
+            target:
+              entity_id: light.living_room_living_room_light_front_corner
+            data:
+              brightness_pct: "{{ front_pct }}"
+              transition: "{{ fade }}"
 
 template:
   - switch:
@@ -30,30 +98,15 @@ template:
         unique_id: evening_dimming
         icon: mdi:weather-night
         state: >-
-          {{ is_state('switch.adaptive_lighting_adapt_brightness_living_room', 'on')
-             and is_state('switch.adaptive_lighting_adapt_brightness_bedroom', 'on') }}
+          {{ is_state('switch.adaptive_lighting_adapt_brightness_bedroom', 'on') }}
         turn_on:
           - action: switch.turn_on
             target:
-              entity_id:
-                - switch.adaptive_lighting_adapt_brightness_living_room
-                - switch.adaptive_lighting_adapt_brightness_bedroom
-          # Apply now rather than at AL's next pass, up to 5 minutes away. The
-          # living room is skipped during a call, because apply overrides
-          # manual control and would dim Zoom mode's key light.
-          - if:
-              - condition: state
-                entity_id: input_boolean.zoom_mode
-                state: "off"
-            then:
-              - action: adaptive_lighting.apply
-                continue_on_error: true
-                data:
-                  entity_id: switch.adaptive_lighting_living_room
-                  adapt_brightness: true
-                  adapt_color: false
-                  turn_on_lights: false
-                  transition: 2
+              entity_id: switch.adaptive_lighting_adapt_brightness_bedroom
+          - action: switch.turn_off
+            target:
+              entity_id: switch.adaptive_lighting_adapt_brightness_living_room
+          # Apply now rather than at the next pass, up to 5 minutes away.
           - action: adaptive_lighting.apply
             continue_on_error: true
             data:
@@ -62,53 +115,101 @@ template:
               adapt_color: true
               turn_on_lights: false
               transition: 2
+          - action: script.living_room_brightness
+            data:
+              level: >-
+                {{ state_attr('switch.adaptive_lighting_living_room', 'brightness_pct')
+                   | float(100) }}
+              transition: 2
         turn_off:
           - action: switch.turn_off
             target:
               entity_id:
-                - switch.adaptive_lighting_adapt_brightness_living_room
                 - switch.adaptive_lighting_adapt_brightness_bedroom
-          # Off means work. Each lamp goes to its own level, by how its light
-          # reaches Jane (2026-11-20). The uplights bounce off the ceiling, so
-          # they go to full: the living room back lamp and the bedroom upper
-          # lamp, which also make up for the front lamp being lower. The front
-          # lamp is a point source near her face at the desk, so it goes to
-          # 60%; she found 100% and then 85% too bright. During a call it is
-          # Zoom mode's key light and keeps its call brightness. The bedroom
-          # lower lamp points down and is left alone.
-          - variables:
-              uplights_on: >-
-                {{ ['light.living_room_living_room_light_back_corner',
-                    'light.ikea_smart_light_bulb_upper']
-                   | select('is_state', 'on') | list }}
+                - switch.adaptive_lighting_adapt_brightness_living_room
+          # Off means work: every lamp that is on goes to its ceiling. The
+          # bedroom lower lamp is left alone.
           - if:
-              - condition: template
-                value_template: "{{ uplights_on | count > 0 }}"
+              - condition: state
+                entity_id: light.ikea_smart_light_bulb_upper
+                state: "on"
             then:
               - action: light.turn_on
                 continue_on_error: true
                 target:
-                  entity_id: "{{ uplights_on }}"
+                  entity_id: light.ikea_smart_light_bulb_upper
                 data:
                   brightness_pct: 100
                   transition: 2
-          - if:
-              - condition: state
-                entity_id: light.living_room_living_room_light_front_corner
-                state: "on"
-              - condition: state
-                entity_id: input_boolean.zoom_mode
-                state: "off"
-            then:
-              - action: light.turn_on
-                continue_on_error: true
-                target:
-                  entity_id: light.living_room_living_room_light_front_corner
-                data:
-                  brightness_pct: 60
-                  transition: 2
+          - action: script.living_room_brightness
+            data:
+              level: 100
+              transition: 2
 
 automation:
+  - id: living_room_brightness_follow
+    alias: Living room brightness - follow the sun
+    description: >-
+      While Evening dimming is on, keeps the living room lamps on Adaptive
+      Lighting's brightness curve, each scaled to its own ceiling. Runs when the
+      curve moves (every 5 minutes), when a living room lamp comes on, and when
+      Home Assistant starts.
+    triggers:
+      - trigger: state
+        entity_id: switch.adaptive_lighting_living_room
+        attribute: brightness_pct
+      - trigger: state
+        id: lamp_on
+        entity_id:
+          - light.living_room_living_room_light_front_corner
+          - light.living_room_living_room_light_back_corner
+        to: "on"
+      - trigger: homeassistant
+        event: start
+    conditions:
+      - condition: state
+        entity_id: switch.evening_dimming
+        state: "on"
+    actions:
+      - action: script.living_room_brightness
+        data:
+          level: >-
+            {{ state_attr('switch.adaptive_lighting_living_room', 'brightness_pct')
+               | float(100) }}
+          transition: "{{ 1 if trigger.id == 'lamp_on' else 2 }}"
+    mode: restart
+
+  - id: living_room_al_brightness_stays_off
+    alias: Living room - Adaptive Lighting leaves brightness alone
+    description: >-
+      Adaptive Lighting's own living room brightness switch must stay off,
+      because this package sets living room brightness. If it is ever on, it
+      would push both lamps to one level and lift the front lamp above its
+      ceiling. This switches it off again and puts the lamps back.
+    triggers:
+      - trigger: state
+        entity_id: switch.adaptive_lighting_adapt_brightness_living_room
+        to: "on"
+      - trigger: homeassistant
+        event: start
+      - trigger: time_pattern
+        minutes: "/5"
+    conditions:
+      - condition: state
+        entity_id: switch.adaptive_lighting_adapt_brightness_living_room
+        state: "on"
+    actions:
+      - action: switch.turn_off
+        target:
+          entity_id: switch.adaptive_lighting_adapt_brightness_living_room
+      - action: script.living_room_brightness
+        data:
+          level: >-
+            {{ state_attr('switch.adaptive_lighting_living_room', 'brightness_pct')
+               | float(100) if is_state('switch.evening_dimming', 'on') else 100 }}
+          transition: 2
+    mode: single
+
   - id: evening_dimming_back_on
     alias: Evening dimming - back on in the morning
     description: >-

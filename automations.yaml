@@ -625,9 +625,9 @@
     adapt-colour, re-apply AL, and re-trigger the Living Room warm-end correction.
     While ON, moving the Kelvin slider re-applies live. The Living Room warm-end correction
     automation is separately gated on this same boolean, otherwise it would push the
-    front corner back to orange within 5 minutes. The key light is also marked as manually
-    controlled in Living Room Adaptive Lighting for the call, because Evening dimming would
-    otherwise pull it down to the night level within 5 minutes (packages/evening_dimming.yaml).'
+    front corner back to orange within 5 minutes. Evening dimming''s living room script
+    skips the key light while this is on, and OFF puts the living room lamps back
+    on the sun''s curve if Evening dimming is on (packages/evening_dimming.yaml).'
   triggers:
   - entity_id: input_boolean.zoom_mode
     id: 'on'
@@ -656,13 +656,6 @@
         alias: Stop Bedroom Adaptive Lighting re-applying its warm colour
         target:
           entity_id: switch.adaptive_lighting_adapt_color_bedroom
-      - action: adaptive_lighting.set_manual_control
-        alias: Keep Evening dimming off the key light for the call
-        continue_on_error: true
-        data:
-          entity_id: switch.adaptive_lighting_living_room
-          lights: '{{ zoom_key_light }}'
-          manual_control: true
       - action: light.turn_off
         alias: Kill everything behind her
         continue_on_error: true
@@ -709,13 +702,18 @@
           transition: 2
         target:
           entity_id: scene.zoom_mode_restore
-      - action: adaptive_lighting.set_manual_control
-        alias: Hand the key light back to Evening dimming
-        continue_on_error: true
-        data:
-          entity_id: switch.adaptive_lighting_living_room
-          lights: '{{ zoom_key_light }}'
-          manual_control: false
+      - if:
+        - condition: state
+          entity_id: switch.evening_dimming
+          state: 'on'
+        then:
+        - action: script.living_room_brightness
+          alias: Put the living room lamps back on the sun's curve
+          continue_on_error: true
+          data:
+            level: '{{ state_attr(''switch.adaptive_lighting_living_room'',''brightness_pct'')
+              | float(100) }}'
+            transition: 2
       - action: switch.turn_on
         alias: Hand the Bedroom bulbs back to Adaptive Lighting
         target:
