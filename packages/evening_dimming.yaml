@@ -1,5 +1,8 @@
-# Evening dimming: one switch, for the whole flat, that says whether lamp
-# brightness follows the sun or stays put.
+# Adaptive brightness: one switch, for the whole flat, that says whether lamp
+# brightness follows the sun or stays put. It was called Evening dimming until
+# 2026-11-22, when Jane renamed it. Its entity id is still
+# switch.evening_dimming, and this file keeps its old name, so nothing that
+# refers to either has to change.
 #
 # Every lamp has a ceiling, the most it gives outside a call:
 #   - Living room back and bedroom upper are uplights that bounce off the
@@ -94,9 +97,9 @@ script:
 
 template:
   - switch:
-      - name: Evening dimming
+      - name: Adaptive brightness
         unique_id: evening_dimming
-        icon: mdi:weather-night
+        icon: mdi:brightness-auto
         state: >-
           {{ is_state('switch.adaptive_lighting_adapt_brightness_bedroom', 'on') }}
         turn_on:
@@ -150,7 +153,7 @@ automation:
   - id: living_room_brightness_follow
     alias: Living room brightness - follow the sun
     description: >-
-      While Evening dimming is on, keeps the living room lamps on Adaptive
+      While Adaptive brightness is on, keeps the living room lamps on Adaptive
       Lighting's brightness curve, each scaled to its own ceiling. Runs when the
       curve moves (every 5 minutes), when a living room lamp comes on, and when
       Home Assistant starts.
@@ -211,9 +214,9 @@ automation:
     mode: single
 
   - id: evening_dimming_back_on
-    alias: Evening dimming - back on in the morning
+    alias: Adaptive brightness - back on in the morning
     description: >-
-      Switches Evening dimming back on at sunrise, so a night it was switched
+      Switches Adaptive brightness back on at sunrise, so a night it was switched
       off for work does not carry over to the next evening. Also runs when Home
       Assistant starts in daylight, in case it was down at sunrise.
     triggers:

@@ -625,9 +625,9 @@
     adapt-colour, re-apply AL, and re-trigger the Living Room warm-end correction.
     While ON, moving the Kelvin slider re-applies live. The Living Room warm-end correction
     automation is separately gated on this same boolean, otherwise it would push the
-    front corner back to orange within 5 minutes. Evening dimming''s living room script
+    front corner back to orange within 5 minutes. The living room brightness script
     skips the key light while this is on, and OFF puts the living room lamps back
-    on the sun''s curve if Evening dimming is on (packages/evening_dimming.yaml).'
+    on the sun''s curve if Adaptive brightness is on (packages/evening_dimming.yaml).'
   triggers:
   - entity_id: input_boolean.zoom_mode
     id: 'on'
