@@ -70,10 +70,13 @@ template:
         unique_id: ha_green_disk_stalls
         device_class: problem
         icon: mdi:harddisk
-        availability: "{{ is_number(states('sensor.ha_green_full_io_stall')) }}"
         # Kernel PSI avg300 is already smoothed over five minutes. Require
         # five minutes below the line to close a noisy episode.
-        state: "{{ states('sensor.ha_green_full_io_stall') | float(0) >= 20 }}"
+        # An unknown value cancels the clear timer. Five observed minutes
+        # below the line must start again after an interruption in sampling.
+        state: >-
+          {% set pressure = states('sensor.ha_green_full_io_stall') | float(none) %}
+          {{ pressure >= 20 if pressure is not none else none }}
         delay_off:
           minutes: 5
 
@@ -114,7 +117,6 @@ automation:
     triggers:
       - trigger: state
         entity_id: binary_sensor.ha_green_disk_stalls
-        from: "on"
         to: "off"
     conditions:
       - condition: template
