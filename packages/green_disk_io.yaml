@@ -15,14 +15,13 @@ command_line:
         - read_ms
         - write_ms
 
-# VictoriaMetrics keeps the detailed traces. Keep the binary problem history
-# in Recorder so the phone tile can show when each episode began and ended.
+# Overview shows full I/O pressure beside memory. Keep its numeric history
+# and the stall episodes in Recorder. Grafana keeps the detailed disk traces.
 recorder:
   exclude:
     entities:
       - sensor.ha_green_disk_sample
       - sensor.ha_green_some_io_stall
-      - sensor.ha_green_full_io_stall
       - sensor.ha_green_disk_read_rate
       - sensor.ha_green_disk_write_rate
       - sensor.ha_green_disk_read_latency
@@ -39,6 +38,7 @@ template:
       - name: HA Green full IO stall
         unique_id: ha_green_full_io_stall
         unit_of_measurement: "%"
+        state_class: measurement
         availability: *fresh_sample
         state: "{{ state_attr('sensor.ha_green_disk_sample', 'full_pct') }}"
       - name: HA Green disk read rate
