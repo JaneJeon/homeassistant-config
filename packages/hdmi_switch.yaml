@@ -1,12 +1,11 @@
 # HDMI switch: which input the BZBGear switch is showing, and a control for the
 # phone's Home tab.
 #
-# The BZBGear BG-8K-HS21AR (2 inputs, 1 output) sits between the screen and two
-# sources: input 1 is the Macs (through the KVM), input 2 is the Xbox. The
-# Green talks to it over RS-232 through scripts/bzbgear.sh. The switch never
-# reports on its own, so its input has to be asked for. The input can change
-# without Home Assistant (the switch's own button, its auto-switch, the IR
-# blaster), so asking is the only way to know.
+# The BZBGear BG-8K-HS21AR (2 inputs, 1 output) connects the screen to the Mac
+# (through the KVM) and the Xbox. The Green talks to it over RS-232 through
+# scripts/bzbgear.sh. The switch never reports on its own. Its input can also
+# change without Home Assistant (the switch's own button, its auto-switch, the
+# IR blaster), so asking the switch is the only way to know which input is active.
 #
 # Why it exists: Jane wanted a control that shows which input is active and
 # switches to the other (2026-11-01).
@@ -50,13 +49,17 @@ template:
       - name: HDMI input
         unique_id: hdmi_input_select
         icon: mdi:video-input-hdmi
+        variables:
+          input_sources:
+            "1": Mac
+            "2": Xbox
         availability: "{{ has_value('sensor.hdmi_input') }}"
-        options: "{{ ['Macs', 'Xbox'] }}"
-        state: "{{ {'1': 'Macs', '2': 'Xbox'}.get(states('sensor.hdmi_input')) }}"
+        options: "{{ input_sources.values() | list }}"
+        state: "{{ input_sources.get(states('sensor.hdmi_input')) }}"
         select_option:
           - if:
               - condition: template
-                value_template: "{{ option == 'Macs' }}"
+                value_template: "{{ option == input_sources['1'] }}"
             then:
               - action: script.hdmi_switch_to_input_1
             else:
