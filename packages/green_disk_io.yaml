@@ -1,0 +1,133 @@
+# One kernel snapshot serves the phone, Grafana and the Telegram warning.
+command_line:
+  - sensor:
+      name: HA Green disk sample
+      unique_id: ha_green_disk_sample
+      command: python3 /config/scripts/green_disk_io.py
+      scan_interval: 30
+      value_template: "{{ value_json.sampled_at | int }}"
+      json_attributes:
+        - device
+        - some_pct
+        - full_pct
+        - read_mib_s
+        - write_mib_s
+        - read_ms
+        - write_ms
+
+# VictoriaMetrics keeps the detailed traces. Keep the binary problem history
+# in Recorder so the phone tile can show when each episode began and ended.
+recorder:
+  exclude:
+    entities:
+      - sensor.ha_green_disk_sample
+      - sensor.ha_green_some_io_stall
+      - sensor.ha_green_full_io_stall
+      - sensor.ha_green_disk_read_rate
+      - sensor.ha_green_disk_write_rate
+      - sensor.ha_green_disk_read_latency
+      - sensor.ha_green_disk_write_latency
+
+template:
+  - sensor:
+      - name: HA Green some IO stall
+        unique_id: ha_green_some_io_stall
+        unit_of_measurement: "%"
+        availability: &fresh_sample >-
+          {{ 0 <= as_timestamp(now()) - states('sensor.ha_green_disk_sample') | float(0) <= 120 }}
+        state: "{{ state_attr('sensor.ha_green_disk_sample', 'some_pct') }}"
+      - name: HA Green full IO stall
+        unique_id: ha_green_full_io_stall
+        unit_of_measurement: "%"
+        availability: *fresh_sample
+        state: "{{ state_attr('sensor.ha_green_disk_sample', 'full_pct') }}"
+      - name: HA Green disk read rate
+        unique_id: ha_green_disk_read_rate
+        device_class: data_rate
+        unit_of_measurement: MiB/s
+        availability: *fresh_sample
+        state: "{{ state_attr('sensor.ha_green_disk_sample', 'read_mib_s') | round(3, default=none) }}"
+      - name: HA Green disk write rate
+        unique_id: ha_green_disk_write_rate
+        device_class: data_rate
+        unit_of_measurement: MiB/s
+        availability: *fresh_sample
+        state: "{{ state_attr('sensor.ha_green_disk_sample', 'write_mib_s') | round(3, default=none) }}"
+      - name: HA Green disk read latency
+        unique_id: ha_green_disk_read_latency
+        device_class: duration
+        unit_of_measurement: ms
+        availability: *fresh_sample
+        state: "{{ state_attr('sensor.ha_green_disk_sample', 'read_ms') | round(1, default=none) }}"
+      - name: HA Green disk write latency
+        unique_id: ha_green_disk_write_latency
+        device_class: duration
+        unit_of_measurement: ms
+        availability: *fresh_sample
+        state: "{{ state_attr('sensor.ha_green_disk_sample', 'write_ms') | round(1, default=none) }}"
+  - binary_sensor:
+      - name: HA Green disk stalls
+        unique_id: ha_green_disk_stalls
+        device_class: problem
+        icon: mdi:harddisk
+        availability: "{{ is_number(states('sensor.ha_green_full_io_stall')) }}"
+        # Kernel PSI avg300 is already smoothed over five minutes. Require
+        # five minutes below the line to close a noisy episode.
+        state: "{{ states('sensor.ha_green_full_io_stall') | float(0) >= 20 }}"
+        delay_off:
+          minutes: 5
+
+automation:
+  - id: ha_green_disk_stall_warning
+    alias: HA Green - disk stall warning
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.ha_green_disk_stalls
+        from: "off"
+        to: "on"
+        id: onset
+      - trigger: time_pattern
+        minutes: "/5"
+    conditions:
+      - condition: state
+        entity_id: binary_sensor.ha_green_disk_stalls
+        state: "on"
+      - condition: template
+        value_template: >-
+          {% set last = state_attr(this.entity_id, 'last_triggered') %}
+          {{ trigger.id == 'onset' or last is none or now() - last >= timedelta(hours=6) }}
+    actions:
+      - action: notify.send_message
+        target:
+          entity_id: notify.telegram_bot_7842566738_7054392448
+        data:
+          title: HA Green waiting on disk I/O
+          message: >-
+            The five-minute reading reached 20% of time with all active work
+            waiting on I/O. It is now {{ states('sensor.ha_green_full_io_stall') }}%.
+            For disk speed and latency, open Grafana → System → HA Green → Disk.
+
+  - id: ha_green_disk_stall_recovered
+    alias: HA Green - disk stalls cleared
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.ha_green_disk_stalls
+        from: "on"
+        to: "off"
+    conditions:
+      - condition: template
+        value_template: >-
+          {% set warned = state_attr('automation.ha_green_disk_stall_warning', 'last_triggered') %}
+          {% set cleared = state_attr(this.entity_id, 'last_triggered') %}
+          {{ warned is not none and (cleared is none or warned > cleared) }}
+    actions:
+      - action: notify.send_message
+        target:
+          entity_id: notify.telegram_bot_7842566738_7054392448
+        data:
+          title: HA Green disk stalls cleared
+          message: >-
+            The five-minute I/O stall reading has stayed below 20% for five
+            minutes. It is now {{ states('sensor.ha_green_full_io_stall') }}%.
