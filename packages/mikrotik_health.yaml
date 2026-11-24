@@ -1,0 +1,96 @@
+# MikroTik health readings collected by the MikroTik Telemetry app.
+rest:
+  - resource: !secret mikrotik_victoriametrics_query_url
+    params:
+      # The app publishes every 15 seconds. Require fresh data from the same poll
+      # for resource readings, including the optional SNMP metrics.
+      query: >-
+        WITH (
+          selected = {job="mikrotik-telemetry"},
+          snmp = mikrotik_snmp_up{selected},
+          current(m) = last_over_time(m[45s]) and
+            (tlast_over_time(m[45s]) == on(job) group_left tlast_over_time(snmp[45s])),
+          snmp_ok = last_over_time(snmp[45s]) == 1,
+          replies = sum by (job) (increase_prometheus(mikrotik_ping_outcomes_total{selected, outcome="reply"}[45s])),
+          timeouts = sum by (job) (increase_prometheus(mikrotik_ping_outcomes_total{selected, outcome="no_reply_by_deadline"}[45s])),
+          reachable = (replies > bool 0) and (replies + timeouts > 0),
+          cpu = avg by (job) (current(mikrotik_cpu_load_percent{selected})),
+          memory = 100 * current(mikrotik_memory_bytes{selected, kind="used"})
+            / on(job) (current(mikrotik_memory_bytes{selected, kind="total"}) > 0),
+          uptime = current(mikrotik_uptime_seconds{selected}) / 3600,
+          leases = current(mikrotik_dhcp_leases{selected}),
+          result(m, name) = label_set(m, "reading", name)
+        )
+        result(reachable, "reachable")
+        or result(last_over_time(snmp[45s]), "snmp")
+        or result(cpu and on(job) snmp_ok, "cpu")
+        or result(memory and on(job) snmp_ok, "memory")
+        or result(uptime and on(job) snmp_ok, "uptime")
+        or result(leases and on(job) snmp_ok, "leases")
+    scan_interval: 30
+    timeout: 5
+    binary_sensor:
+      # Reachable if a reply arrived in the recent window. No usable probe
+      # outcomes, including probe-local failures alone, mean unavailable.
+      - name: MikroTik Reachable recently
+        unique_id: mikrotik_reachable_recently
+        device_class: connectivity
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'reachable') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'reachable') | list) %}
+          {{ match and match[0].value[1] == '1' }}
+      - name: MikroTik SNMP responding
+        unique_id: mikrotik_snmp_responding
+        device_class: connectivity
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'snmp') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'snmp') | list) %}
+          {{ match and match[0].value[1] == '1' }}
+    sensor:
+      - name: MikroTik CPU utilization
+        unique_id: mikrotik_cpu_utilization
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:cpu-64-bit
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'cpu') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'cpu') | list) %}
+          {{ match[0].value[1] | float | round(1) if match else none }}
+      - name: MikroTik Memory utilization
+        unique_id: mikrotik_memory_utilization
+        unit_of_measurement: "%"
+        state_class: measurement
+        icon: mdi:memory
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'memory') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'memory') | list) %}
+          {{ match[0].value[1] | float | round(1) if match else none }}
+      - name: MikroTik Uptime
+        unique_id: mikrotik_uptime
+        device_class: duration
+        unit_of_measurement: h
+        state_class: measurement
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'uptime') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'uptime') | list) %}
+          {{ match[0].value[1] | float | round(1) if match else none }}
+      - name: MikroTik DHCP leases
+        unique_id: mikrotik_dhcp_leases
+        state_class: measurement
+        icon: mdi:lan-connect
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'leases') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'leases') | list) %}
+          {{ match[0].value[1] | int if match else none }}
