@@ -14,6 +14,11 @@ rest:
           replies = sum by (job) (increase_prometheus(mikrotik_ping_outcomes_total{selected, outcome="reply"}[45s])),
           timeouts = sum by (job) (increase_prometheus(mikrotik_ping_outcomes_total{selected, outcome="no_reply_by_deadline"}[45s])),
           reachable = (replies > bool 0) and (replies + timeouts > 0),
+          lost = sum by (job) (increase_prometheus(mikrotik_ping_outcomes_total{selected, outcome="no_reply_by_deadline"}[1m])),
+          attempted = sum by (job) (increase_prometheus(mikrotik_ping_outcomes_total{selected, outcome=~"reply|no_reply_by_deadline"}[1m])),
+          loss = 100 * lost / (attempted > 0),
+          timed = increase_prometheus(mikrotik_ping_timed_replies_total{selected}[1m]),
+          latency = 1000 * increase_prometheus(mikrotik_ping_reply_seconds_total{selected}[1m]) / (timed > 0),
           cpu = avg by (job) (current(mikrotik_cpu_load_percent{selected})),
           memory = 100 * current(mikrotik_memory_bytes{selected, kind="used"})
             / on(job) (current(mikrotik_memory_bytes{selected, kind="total"}) > 0),
@@ -23,6 +28,8 @@ rest:
         )
         result(reachable, "reachable")
         or result(last_over_time(snmp[45s]), "snmp")
+        or result(loss and on(job) last_over_time(snmp[45s]), "loss")
+        or result(latency and on(job) last_over_time(snmp[45s]), "latency")
         or result(cpu and on(job) snmp_ok, "cpu")
         or result(memory and on(job) snmp_ok, "memory")
         or result(uptime and on(job) snmp_ok, "uptime")
@@ -94,3 +101,23 @@ rest:
         value_template: >-
           {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'leases') | list) %}
           {{ match[0].value[1] | int if match else none }}
+      - name: MikroTik Packet loss
+        unique_id: mikrotik_packet_loss
+        unit_of_measurement: "%"
+        state_class: measurement
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'loss') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'loss') | list) %}
+          {{ match[0].value[1] | float | round(1) if match else none }}
+      - name: MikroTik Round-trip time
+        unique_id: mikrotik_round_trip_time
+        unit_of_measurement: "ms"
+        state_class: measurement
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'latency') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'latency') | list) %}
+          {{ match[0].value[1] | float | round(2) if match else none }}
