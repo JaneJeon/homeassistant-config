@@ -5,7 +5,7 @@ command_line:
       name: Samba IPv4 listener
       unique_id: samba_ipv4_listener
       device_class: connectivity
-      command: "python3 /config/scripts/check_tcp_port.py 10.0.0.11 445"
+      command: !secret samba_ipv4_listener_command
       payload_on: "ON"
       payload_off: "OFF"
       scan_interval: 30

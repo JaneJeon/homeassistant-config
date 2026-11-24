@@ -1,0 +1,49 @@
+# WAN measurements collected by the MikroTik Telemetry app.
+rest:
+  - resource: !secret mikrotik_victoriametrics_query_url
+    params:
+      query: >-
+        label_set(8 * rate(mikrotik_wan_receive_octets_total{job="mikrotik-telemetry"}[1m]) / 1e6, "reading", "download_rate") or label_set(8 * rate(mikrotik_wan_transmit_octets_total{job="mikrotik-telemetry"}[1m]) / 1e6, "reading", "upload_rate") or label_set(increase(mikrotik_wan_receive_octets_total{job="mikrotik-telemetry"}[24h]) / 1e9, "reading", "downloaded_24h") or label_set(increase(mikrotik_wan_transmit_octets_total{job="mikrotik-telemetry"}[24h]) / 1e9, "reading", "uploaded_24h")
+    scan_interval: 30
+    timeout: 5
+    sensor:
+      - name: MikroTik Download rate
+        unique_id: mikrotik_download_rate
+        device_class: data_rate
+        unit_of_measurement: "Mbit/s"
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'download_rate') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'download_rate') | list) %}
+          {{ match[0].value[1] | float | round(2) if match else none }}
+      - name: MikroTik Upload rate
+        unique_id: mikrotik_upload_rate
+        device_class: data_rate
+        unit_of_measurement: "Mbit/s"
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'upload_rate') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'upload_rate') | list) %}
+          {{ match[0].value[1] | float | round(2) if match else none }}
+      - name: MikroTik Downloaded in 24h
+        unique_id: mikrotik_downloaded_24h
+        device_class: data_size
+        unit_of_measurement: "GB"
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'downloaded_24h') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'downloaded_24h') | list) %}
+          {{ match[0].value[1] | float | round(2) if match else none }}
+      - name: MikroTik Uploaded in 24h
+        unique_id: mikrotik_uploaded_24h
+        device_class: data_size
+        unit_of_measurement: "GB"
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'uploaded_24h') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'uploaded_24h') | list) %}
+          {{ match[0].value[1] | float | round(2) if match else none }}
