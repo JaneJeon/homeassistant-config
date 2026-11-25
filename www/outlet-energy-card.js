@@ -16,12 +16,12 @@ function timestamp(value) {
   return typeof value === "number" ? value : Date.parse(value);
 }
 
-function toBuckets(meters, statistics) {
+function toBuckets(meters, statistics, stop) {
   const buckets = new Map();
   meters.forEach(({ entity }, index) => {
     for (const row of statistics[entity] ?? []) {
       const start = timestamp(row.start);
-      if (!Number.isFinite(start)) continue;
+      if (!Number.isFinite(start) || start >= stop) continue;
       if (!buckets.has(start)) {
         buckets.set(start, {
           start,
@@ -152,7 +152,7 @@ class OutletEnergyCard extends HTMLElement {
       });
       if (this.revision !== revision) return;
       this.result = {
-        rows: toBuckets(this.config.entities, statistics),
+        rows: toBuckets(this.config.entities, statistics, stop.getTime()),
         period,
       };
     } catch {
