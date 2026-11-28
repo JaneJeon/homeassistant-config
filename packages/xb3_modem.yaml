@@ -79,7 +79,7 @@ rest:
       # means the cable line itself is losing data.
       - name: Cable line Lost blocks
         unique_id: cable_line_lost_blocks
-        unit_of_measurement: blocks/min
+        unit_of_measurement: "/min"
         state_class: measurement
         icon: mdi:alert-octagon-outline
         availability: >-
