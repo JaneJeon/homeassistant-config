@@ -1,0 +1,285 @@
+# How well Jane's own devices are connected to the MikroTik's Wi-Fi, as the
+# router sees them. The MikroTik Telemetry app (homeassistant-apps, job
+# "mikrotik-telemetry") publishes these every 15 seconds, from version 0.4.0.
+# A device that is not on the Wi-Fi has no readings, so its sensors are
+# unavailable.
+#
+# The devices, by the name the router knows them by:
+#   MacBook-Pro (Mac), iPhone, WiiM-Mini, Back-corner-light,
+#   Front-corner-light, IR-blaster, Ecowitt-GW1100, Brother-scanner
+# This list mirrors the app's `wifi_clients` option. A new device must be
+# added in both places.
+#
+# Every device gets a signal sensor and an on/off "Wi-Fi" sensor. The Mac and
+# the iPhone also get band and "connected since".
+#
+# There is no link speed here on purpose. The router reports the rate of the
+# last frame it sent, so an idle phone reads 6 Mbit/s even on a good
+# connection. As a glance reading that would cry wolf. The rate lives on the
+# Grafana charts instead, where its shape over time means something.
+#
+# The resource is VictoriaMetrics' instant-query URL, the same one
+# mikrotik_health.yaml uses, so this package reuses that secret.
+rest:
+  - resource: !secret mikrotik_victoriametrics_query_url
+    params:
+      # While a device moves between the 2.4 and 5 GHz radios, the router can
+      # list it on both for a moment, so there are briefly two series (two
+      # if_index values). To keep exactly one per device, `chosen` takes the
+      # radio seen most recently, and on a tie the higher if_index. All
+      # readings for a device come from that one radio, so they always agree
+      # with each other.
+      #
+      # "Connected since" is the moment the reading was observed minus how
+      # long the router says the device has been joined, rounded to the
+      # minute so small jitter between polls does not rewrite the state every
+      # 30 seconds.
+      query: >-
+        WITH (
+          selected = {job="mikrotik-telemetry"},
+          seen = tlast_over_time(mikrotik_wifi_client_signal_dbm{selected}[45s]),
+          newest = seen == on(client) group_left max by (client) (seen),
+          radio = label_value(newest, "if_index"),
+          chosen = radio == on(client) group_left max by (client) (radio),
+          pick(m) = last_over_time(m[45s]) and on(client, if_index) chosen,
+          observed(m) = tlast_over_time(m[45s]) and on(client, if_index) chosen,
+          joined(m) = round((observed(m) - pick(m)) / 60) * 60,
+          bands(m) = tlast_over_time(m[45s]) and on(client, if_index) chosen,
+          band(m) = bands(m) == on(client) group_left max by (client) (bands(m)),
+          result(m, name) = label_set(m, "reading", name)
+        )
+        result(pick(mikrotik_wifi_client_signal_dbm{selected, client="MacBook-Pro"}), "mac_signal")
+        or result(band(mikrotik_wifi_client_band_info{selected, client="MacBook-Pro"}), "mac_band")
+        or result(joined(mikrotik_wifi_client_uptime_seconds{selected, client="MacBook-Pro"}), "mac_connected_since")
+        or result(pick(mikrotik_wifi_client_signal_dbm{selected, client="iPhone"}), "iphone_signal")
+        or result(band(mikrotik_wifi_client_band_info{selected, client="iPhone"}), "iphone_band")
+        or result(joined(mikrotik_wifi_client_uptime_seconds{selected, client="iPhone"}), "iphone_connected_since")
+        or result(pick(mikrotik_wifi_client_signal_dbm{selected, client="WiiM-Mini"}), "wiim_mini_signal")
+        or result(pick(mikrotik_wifi_client_signal_dbm{selected, client="Back-corner-light"}), "back_corner_light_signal")
+        or result(pick(mikrotik_wifi_client_signal_dbm{selected, client="Front-corner-light"}), "front_corner_light_signal")
+        or result(pick(mikrotik_wifi_client_signal_dbm{selected, client="IR-blaster"}), "ir_blaster_signal")
+        or result(pick(mikrotik_wifi_client_signal_dbm{selected, client="Ecowitt-GW1100"}), "ecowitt_gw1100_signal")
+        or result(pick(mikrotik_wifi_client_signal_dbm{selected, client="Brother-scanner"}), "brother_scanner_signal")
+    scan_interval: 30
+    timeout: 5
+    sensor:
+      # Mac
+      - name: Mac Wi-Fi signal
+        unique_id: mac_wifi_signal
+        device_class: signal_strength
+        unit_of_measurement: dBm
+        state_class: measurement
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'mac_signal') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'mac_signal') | list) %}
+          {{ match[0].value[1] | float | round(0) | int if match else none }}
+      # When the Mac last joined the Wi-Fi.
+      - name: Mac Wi-Fi connected since
+        unique_id: mac_wifi_connected_since
+        device_class: timestamp
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'mac_connected_since') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'mac_connected_since') | list) %}
+          {{ (match[0].value[1] | float | as_datetime).isoformat() if match else none }}
+      # The router's band text (such as "5ghz-ax") shortened to "5 GHz",
+      # "2.4 GHz" or "6 GHz". Anything else shows as the router wrote it.
+      - name: Mac Wi-Fi band
+        unique_id: mac_wifi_band
+        icon: mdi:wifi
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'mac_band')
+                  | selectattr('metric.band', 'defined') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'mac_band') | list) %}
+          {% set band = match[0].metric.band if match else '' %}
+          {{ '5 GHz' if band.startswith('5ghz')
+             else '2.4 GHz' if band.startswith('2ghz')
+             else '6 GHz' if band.startswith('6ghz')
+             else band }}
+
+      # iPhone
+      - name: iPhone Wi-Fi signal
+        unique_id: iphone_wifi_signal
+        device_class: signal_strength
+        unit_of_measurement: dBm
+        state_class: measurement
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'iphone_signal') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'iphone_signal') | list) %}
+          {{ match[0].value[1] | float | round(0) | int if match else none }}
+      # When the iPhone last joined the Wi-Fi.
+      - name: iPhone Wi-Fi connected since
+        unique_id: iphone_wifi_connected_since
+        device_class: timestamp
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'iphone_connected_since') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'iphone_connected_since') | list) %}
+          {{ (match[0].value[1] | float | as_datetime).isoformat() if match else none }}
+      - name: iPhone Wi-Fi band
+        unique_id: iphone_wifi_band
+        icon: mdi:wifi
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'iphone_band')
+                  | selectattr('metric.band', 'defined') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'iphone_band') | list) %}
+          {% set band = match[0].metric.band if match else '' %}
+          {{ '5 GHz' if band.startswith('5ghz')
+             else '2.4 GHz' if band.startswith('2ghz')
+             else '6 GHz' if band.startswith('6ghz')
+             else band }}
+
+      # The other devices: signal only.
+      - name: WiiM Mini Wi-Fi signal
+        unique_id: wiim_mini_wifi_signal
+        device_class: signal_strength
+        unit_of_measurement: dBm
+        state_class: measurement
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'wiim_mini_signal') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'wiim_mini_signal') | list) %}
+          {{ match[0].value[1] | float | round(0) | int if match else none }}
+      - name: Back corner light Wi-Fi signal
+        unique_id: back_corner_light_wifi_signal
+        device_class: signal_strength
+        unit_of_measurement: dBm
+        state_class: measurement
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'back_corner_light_signal') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'back_corner_light_signal') | list) %}
+          {{ match[0].value[1] | float | round(0) | int if match else none }}
+      - name: Front corner light Wi-Fi signal
+        unique_id: front_corner_light_wifi_signal
+        device_class: signal_strength
+        unit_of_measurement: dBm
+        state_class: measurement
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'front_corner_light_signal') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'front_corner_light_signal') | list) %}
+          {{ match[0].value[1] | float | round(0) | int if match else none }}
+      - name: IR blaster Wi-Fi signal
+        unique_id: ir_blaster_wifi_signal
+        device_class: signal_strength
+        unit_of_measurement: dBm
+        state_class: measurement
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'ir_blaster_signal') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'ir_blaster_signal') | list) %}
+          {{ match[0].value[1] | float | round(0) | int if match else none }}
+      - name: Ecowitt GW1100 Wi-Fi signal
+        unique_id: ecowitt_gw1100_wifi_signal
+        device_class: signal_strength
+        unit_of_measurement: dBm
+        state_class: measurement
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'ecowitt_gw1100_signal') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'ecowitt_gw1100_signal') | list) %}
+          {{ match[0].value[1] | float | round(0) | int if match else none }}
+      - name: Brother scanner Wi-Fi signal
+        unique_id: brother_scanner_wifi_signal
+        device_class: signal_strength
+        unit_of_measurement: dBm
+        state_class: measurement
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'brother_scanner_signal') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'brother_scanner_signal') | list) %}
+          {{ match[0].value[1] | float | round(0) | int if match else none }}
+
+# On when the router sees the device on the Wi-Fi, off when it does not.
+#
+# A missing signal only means "not connected" when the router's own readings
+# are coming in. If they are not (`MikroTik SNMP responding` is not on), these
+# are unavailable instead of off, so a telemetry outage never reads as every
+# device dropping off the Wi-Fi at once.
+template:
+  - binary_sensor:
+      - name: Mac Wi-Fi
+        unique_id: mac_wifi
+        device_class: connectivity
+        availability: "{{ is_state('binary_sensor.mikrotik_snmp_responding', 'on') }}"
+        state: "{{ has_value('sensor.mac_wi_fi_signal') }}"
+        attributes:
+          signal: >-
+            {{ states('sensor.mac_wi_fi_signal') ~ ' dBm' if has_value('sensor.mac_wi_fi_signal') else none }}
+          band: >-
+            {{ states('sensor.mac_wi_fi_band') if has_value('sensor.mac_wi_fi_signal') and has_value('sensor.mac_wi_fi_band') else none }}
+      - name: iPhone Wi-Fi
+        unique_id: iphone_wifi
+        device_class: connectivity
+        availability: "{{ is_state('binary_sensor.mikrotik_snmp_responding', 'on') }}"
+        state: "{{ has_value('sensor.iphone_wi_fi_signal') }}"
+        attributes:
+          signal: >-
+            {{ states('sensor.iphone_wi_fi_signal') ~ ' dBm' if has_value('sensor.iphone_wi_fi_signal') else none }}
+          band: >-
+            {{ states('sensor.iphone_wi_fi_band') if has_value('sensor.iphone_wi_fi_signal') and has_value('sensor.iphone_wi_fi_band') else none }}
+      - name: WiiM Mini Wi-Fi
+        unique_id: wiim_mini_wifi
+        device_class: connectivity
+        availability: "{{ is_state('binary_sensor.mikrotik_snmp_responding', 'on') }}"
+        state: "{{ has_value('sensor.wiim_mini_wi_fi_signal') }}"
+        attributes:
+          signal: >-
+            {{ states('sensor.wiim_mini_wi_fi_signal') ~ ' dBm' if has_value('sensor.wiim_mini_wi_fi_signal') else none }}
+      - name: Back corner light Wi-Fi
+        unique_id: back_corner_light_wifi
+        device_class: connectivity
+        availability: "{{ is_state('binary_sensor.mikrotik_snmp_responding', 'on') }}"
+        state: "{{ has_value('sensor.back_corner_light_wi_fi_signal') }}"
+        attributes:
+          signal: >-
+            {{ states('sensor.back_corner_light_wi_fi_signal') ~ ' dBm' if has_value('sensor.back_corner_light_wi_fi_signal') else none }}
+      - name: Front corner light Wi-Fi
+        unique_id: front_corner_light_wifi
+        device_class: connectivity
+        availability: "{{ is_state('binary_sensor.mikrotik_snmp_responding', 'on') }}"
+        state: "{{ has_value('sensor.front_corner_light_wi_fi_signal') }}"
+        attributes:
+          signal: >-
+            {{ states('sensor.front_corner_light_wi_fi_signal') ~ ' dBm' if has_value('sensor.front_corner_light_wi_fi_signal') else none }}
+      - name: IR blaster Wi-Fi
+        unique_id: ir_blaster_wifi
+        device_class: connectivity
+        availability: "{{ is_state('binary_sensor.mikrotik_snmp_responding', 'on') }}"
+        state: "{{ has_value('sensor.ir_blaster_wi_fi_signal') }}"
+        attributes:
+          signal: >-
+            {{ states('sensor.ir_blaster_wi_fi_signal') ~ ' dBm' if has_value('sensor.ir_blaster_wi_fi_signal') else none }}
+      - name: Ecowitt GW1100 Wi-Fi
+        unique_id: ecowitt_gw1100_wifi
+        device_class: connectivity
+        availability: "{{ is_state('binary_sensor.mikrotik_snmp_responding', 'on') }}"
+        state: "{{ has_value('sensor.ecowitt_gw1100_wi_fi_signal') }}"
+        attributes:
+          signal: >-
+            {{ states('sensor.ecowitt_gw1100_wi_fi_signal') ~ ' dBm' if has_value('sensor.ecowitt_gw1100_wi_fi_signal') else none }}
+      - name: Brother scanner Wi-Fi
+        unique_id: brother_scanner_wifi
+        device_class: connectivity
+        availability: "{{ is_state('binary_sensor.mikrotik_snmp_responding', 'on') }}"
+        state: "{{ has_value('sensor.brother_scanner_wi_fi_signal') }}"
+        attributes:
+          signal: >-
+            {{ states('sensor.brother_scanner_wi_fi_signal') ~ ' dBm' if has_value('sensor.brother_scanner_wi_fi_signal') else none }}

@@ -1,0 +1,103 @@
+# Readings about the Xfinity XB3 modem and the coax cable line behind it.
+#
+# The XB3 Telemetry app (homeassistant-apps) reads them from the modem's
+# admin page and writes them to VictoriaMetrics as job "xb3-telemetry".
+# The modem is in bridge mode and answers its admin page slowly and only
+# some of the time, so each reading looks back 10 minutes. With no reading
+# in that window the sensor goes unavailable instead of showing an old value.
+#
+# The app writes each reading with the time it was observed, not the time it
+# was stored, so a plain instant query would miss most of them. That is why
+# every reading is wrapped in last_over_time (or rate, for the counter).
+#
+# The resource is VictoriaMetrics' instant-query URL. The secret is named for
+# MikroTik because the MikroTik packages added it first; it is the same URL,
+# so this package reuses it rather than adding a second secret.
+rest:
+  - resource: !secret mikrotik_victoriametrics_query_url
+    params:
+      query: >-
+        WITH (
+          selected = {job="xb3-telemetry"},
+          result(m, name) = label_set(m, "reading", name)
+        )
+        result(max(last_over_time(xb3_uptime_seconds{selected}[10m])) / 86400, "uptime")
+        or result(max(last_over_time(xb3_collection_last_success_timestamp_seconds{selected}[1h])), "last_answered")
+        or result(max(last_over_time(xb3_locked_channels{selected, direction="downstream"}[10m])), "downstream_channels")
+        or result(max(last_over_time(xb3_locked_channels{selected, direction="upstream"}[10m])), "upstream_channels")
+        or result(sum(60 * rate(xb3_downstream_codewords_total{selected, kind="uncorrectable"}[10m])), "lost_blocks")
+        or result(min(last_over_time(xb3_downstream_snr_db{selected}[10m])), "signal_quality")
+    scan_interval: 30
+    timeout: 5
+    sensor:
+      - name: XB3 Uptime
+        unique_id: xb3_uptime
+        device_class: duration
+        unit_of_measurement: d
+        state_class: measurement
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'uptime') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'uptime') | list) %}
+          {{ match[0].value[1] | float | round(1) if match else none }}
+      # When the modem last answered its admin page: the newest successful
+      # read by any of the app's collectors. This one looks back a full hour,
+      # so while the page is failing it keeps saying "N minutes ago", which is
+      # the useful thing to know at that moment.
+      - name: XB3 Last answered
+        unique_id: xb3_last_answered
+        device_class: timestamp
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'last_answered') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'last_answered') | list) %}
+          {{ (match[0].value[1] | float | as_datetime).isoformat() if match else none }}
+      - name: Cable line Downstream channels
+        unique_id: cable_line_downstream_channels
+        state_class: measurement
+        icon: mdi:download-network
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'downstream_channels') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'downstream_channels') | list) %}
+          {{ match[0].value[1] | float | int if match else none }}
+      - name: Cable line Upstream channels
+        unique_id: cable_line_upstream_channels
+        state_class: measurement
+        icon: mdi:upload-network
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'upstream_channels') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'upstream_channels') | list) %}
+          {{ match[0].value[1] | float | int if match else none }}
+      # Blocks of data that arrived too damaged to repair, per minute, added
+      # up over every downstream channel. Zero is normal; a steady number
+      # means the cable line itself is losing data.
+      - name: Cable line Lost blocks
+        unique_id: cable_line_lost_blocks
+        unit_of_measurement: blocks/min
+        state_class: measurement
+        icon: mdi:alert-octagon-outline
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'lost_blocks') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'lost_blocks') | list) %}
+          {{ match[0].value[1] | float | round(0) | int if match else none }}
+      # The worst downstream channel's signal-to-noise ratio. It is a ratio in
+      # dB, not a signal strength, so it has no device_class.
+      - name: Cable line Signal quality
+        unique_id: cable_line_signal_quality
+        unit_of_measurement: dB
+        state_class: measurement
+        icon: mdi:sine-wave
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'signal_quality') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'signal_quality') | list) %}
+          {{ match[0].value[1] | float | round(1) if match else none }}

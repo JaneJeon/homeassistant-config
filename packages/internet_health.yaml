@@ -2,15 +2,21 @@
 # signal shown as the phone's Internet tile.
 #
 # A finer instrument also runs: the XB3 Telemetry app (homeassistant-apps)
-# probes the same three targets once a second and writes straight to
-# VictoriaMetrics, next to the modem's line errors. It is not in Home
-# Assistant. Grafana's System dashboard shows both.
+# probes once a second and writes straight to VictoriaMetrics, next to the
+# modem's line errors. It is not in Home Assistant. Grafana's System
+# dashboard shows both.
 #
 # Source: the Ping (ICMP) integration, set up in the UI (it has no YAML),
-# one entry per target, 30 pings per check, a check about once a minute:
-#   binary_sensor.ping_gateway / sensor.ping_gateway_packet_loss       10.0.0.1, the Xfinity gateway (local hop)
+# one entry per outside target, 30 pings per check, a check about once a
+# minute:
 #   binary_sensor.ping_google_dns / sensor.ping_google_dns_packet_loss  8.8.8.8
 #   binary_sensor.ping_cloudflare_dns / ...                             1.1.1.1
+#
+# There used to be a third entry for the Xfinity gateway at 10.0.0.1, the
+# local hop. The modem went into bridge mode on 2026-11-24 and stopped
+# answering pings there, so that entry is retired. The Green's first hop is
+# now the MikroTik router (192.168.88.1), and its loss comes from the
+# MikroTik Telemetry app as sensor.mikrotik_packet_loss (mikrotik_health.yaml).
 #
 # Why the extra layer: when every ping in a check fails, the Ping integration
 # makes its packet-loss sensor "unavailable" and turns the binary sensor off,
@@ -28,15 +34,6 @@ template:
       - trigger: time_pattern
         minutes: "/1"
     sensor:
-      - name: Packet loss - Gateway
-        unique_id: packet_loss_gateway
-        unit_of_measurement: "%"
-        state_class: measurement
-        icon: mdi:router-network
-        availability: "{{ states('binary_sensor.ping_gateway') in ['on', 'off'] }}"
-        state: >-
-          {{ 100 if is_state('binary_sensor.ping_gateway', 'off')
-             else states('sensor.ping_gateway_packet_loss') | float(none) }}
       - name: Packet loss - Google DNS
         unique_id: packet_loss_google_dns
         unit_of_measurement: "%"
@@ -142,8 +139,10 @@ automation:
           message: >-
             Over the last 10 minutes, {{ states('sensor.packet_loss_google_dns_10_min') }}%
             of pings to Google and {{ states('sensor.packet_loss_cloudflare_dns_10_min') }}%
-            to Cloudflare were lost. The gateway lost
-            {{ states('sensor.packet_loss_gateway') }}% in its latest check.
+            to Cloudflare were lost.
+            {{ 'The MikroTik router lost ' ~ states('sensor.mikrotik_packet_loss') ~ '% in the last minute.'
+               if has_value('sensor.mikrotik_packet_loss')
+               else "The MikroTik router's loss is not available right now." }}
 
   - id: internet_recovered_alert
     alias: Internet - recovered alert
