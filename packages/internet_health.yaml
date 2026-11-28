@@ -68,9 +68,18 @@ template:
         availability: >-
           {{ has_value('sensor.packet_loss_google_dns_10_min')
              and has_value('sensor.packet_loss_cloudflare_dns_10_min') }}
+        # The two "age_coverage_ratio" checks keep this off until each average
+        # holds at least five minutes of readings. After a restart or a config
+        # deploy the averages start empty, and one bad first reading (Home
+        # Assistant is busy reloading and its own pings time out) used to read
+        # as 3% or more on its own. That sent a false Telegram alert on
+        # 2026-11-28. In steady state the ratio sits near 0.9, so nothing
+        # changes there.
         state: >-
           {{ [states('sensor.packet_loss_google_dns_10_min') | float(0),
-              states('sensor.packet_loss_cloudflare_dns_10_min') | float(0)] | min >= 3 }}
+              states('sensor.packet_loss_cloudflare_dns_10_min') | float(0)] | min >= 3
+             and [state_attr('sensor.packet_loss_google_dns_10_min', 'age_coverage_ratio') | float(0),
+                  state_attr('sensor.packet_loss_cloudflare_dns_10_min', 'age_coverage_ratio') | float(0)] | min >= 0.5 }}
 
 sensor:
   - platform: statistics

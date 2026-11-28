@@ -54,13 +54,19 @@ class OutletEnergyCard extends HTMLElement {
     this.revision = 0;
   }
 
+  // Two ways to pick the time span. With `period: hour` or `period: day` the
+  // card shows a fixed span ending now (`hours_to_show`, default 24, or
+  // `days_to_show`, default 14) and needs nothing else on the page. Without
+  // `period` it follows Home Assistant's energy date selector, named by
+  // `collection_key`.
   setConfig(config) {
+    const fixed = config.period === "hour" || config.period === "day";
     if (
-      !config.collection_key?.startsWith("energy_") ||
+      (!fixed && !config.collection_key?.startsWith("energy_")) ||
       !config.entities?.length
     ) {
       throw new Error(
-        "Outlet energy requires an energy date selector and at least one energy meter.",
+        "Outlet energy requires a period (hour or day) or an energy date selector, and at least one energy meter.",
       );
     }
     this.detach();
@@ -104,6 +110,15 @@ class OutletEnergyCard extends HTMLElement {
       this.retry
     )
       return;
+    if (this.config.period) {
+      // Fixed span: load now, then again every five minutes so a page left
+      // open keeps up with new hours.
+      const refresh = () => this.load(this.fixedSpan());
+      const timer = setInterval(refresh, 5 * 60_000);
+      this.unsubscribe = () => clearInterval(timer);
+      refresh();
+      return;
+    }
     // Home Assistant's energy date selector stores a collection on the connection.
     const collection = this.connection[`_${this.config.collection_key}`];
     if (!collection) {
@@ -118,12 +133,32 @@ class OutletEnergyCard extends HTMLElement {
     );
   }
 
+  fixedSpan() {
+    const now = new Date();
+    if (this.config.period === "day") {
+      const days = this.config.days_to_show ?? 14;
+      return {
+        start: new Date(
+          now.getFullYear(),
+          now.getMonth(),
+          now.getDate() - (days - 1),
+        ),
+      };
+    }
+    const hours = this.config.hours_to_show ?? 24;
+    const start = new Date(now);
+    start.setMinutes(0, 0, 0);
+    start.setTime(start.getTime() - (hours - 1) * hour);
+    return { start };
+  }
+
   async load(selection) {
     const revision = ++this.revision;
     const { start, end } = selection;
     const stop = end ?? new Date();
     const days = (stop - start) / (24 * hour);
-    const period = days >= 100 ? "month" : days > 2 ? "day" : "hour";
+    const period =
+      this.config.period ?? (days >= 100 ? "month" : days > 2 ? "day" : "hour");
     try {
       const statisticIds = this.config.entities.map(({ entity }) => entity);
       const metadata = await this.homeAssistant.callWS({
