@@ -6,7 +6,10 @@
 #
 # The devices, by the name the router knows them by:
 #   MacBook-Pro (Mac), iPhone, WiiM-Mini, Back-corner-light,
-#   Front-corner-light, IR-blaster, Ecowitt-GW1100, Brother-scanner
+#   Front-corner-light, IR-blaster, Ecowitt-GW1100, Brother-scanner,
+#   Withings-scale
+# The Withings scale joins the Wi-Fi for about 15 seconds after a weigh-in
+# and is off it the rest of the time, so "Disconnected" is its normal state.
 # This list mirrors the app's `wifi_clients` option. A new device must be
 # added in both places.
 #
@@ -60,6 +63,7 @@ rest:
         or result(pick(mikrotik_wifi_client_signal_dbm{selected, client="IR-blaster"}), "ir_blaster_signal")
         or result(pick(mikrotik_wifi_client_signal_dbm{selected, client="Ecowitt-GW1100"}), "ecowitt_gw1100_signal")
         or result(pick(mikrotik_wifi_client_signal_dbm{selected, client="Brother-scanner"}), "brother_scanner_signal")
+        or result(pick(mikrotik_wifi_client_signal_dbm{selected, client="Withings-scale"}), "withings_scale_signal")
     scan_interval: 30
     timeout: 5
     sensor:
@@ -206,6 +210,17 @@ rest:
         value_template: >-
           {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'brother_scanner_signal') | list) %}
           {{ match[0].value[1] | float | round(0) | int if match else none }}
+      - name: Withings scale Wi-Fi signal
+        unique_id: withings_scale_wifi_signal
+        device_class: signal_strength
+        unit_of_measurement: dBm
+        state_class: measurement
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'withings_scale_signal') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'withings_scale_signal') | list) %}
+          {{ match[0].value[1] | float | round(0) | int if match else none }}
 
 # On when the router sees the device on the Wi-Fi, off when it does not.
 #
@@ -283,3 +298,11 @@ template:
         attributes:
           signal: >-
             {{ states('sensor.brother_scanner_wi_fi_signal') ~ ' dBm' if has_value('sensor.brother_scanner_wi_fi_signal') else none }}
+      - name: Withings scale Wi-Fi
+        unique_id: withings_scale_wifi
+        device_class: connectivity
+        availability: "{{ is_state('binary_sensor.mikrotik_snmp_responding', 'on') }}"
+        state: "{{ has_value('sensor.withings_scale_wi_fi_signal') }}"
+        attributes:
+          signal: >-
+            {{ states('sensor.withings_scale_wi_fi_signal') ~ ' dBm' if has_value('sensor.withings_scale_wi_fi_signal') else none }}

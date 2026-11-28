@@ -27,6 +27,7 @@ rest:
         or result(max(last_over_time(xb3_locked_channels{selected, direction="upstream"}[10m])), "upstream_channels")
         or result(sum(60 * rate(xb3_downstream_codewords_total{selected, kind="uncorrectable"}[10m])), "lost_blocks")
         or result(min(last_over_time(xb3_downstream_snr_db{selected}[10m])), "signal_quality")
+        or result(max(last_over_time(xb3_lan_link_speed_bits_per_second{selected}[10m])) / 1e9, "link_speed")
     scan_interval: 30
     timeout: 5
     sensor:
@@ -54,6 +55,23 @@ rest:
         value_template: >-
           {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'last_answered') | list) %}
           {{ (match[0].value[1] | float | as_datetime).isoformat() if match else none }}
+      # The speed the modem and the MikroTik agreed on for the Ethernet cable
+      # between them, as the modem reports it. The MikroTik is the only thing
+      # plugged into the modem, so this takes the fastest of the modem's
+      # ports. 1 Gbit/s is normal; 0.1 would point at the cable or a plug.
+      - name: XB3 Link speed
+        unique_id: xb3_link_speed
+        device_class: data_rate
+        unit_of_measurement: Gbit/s
+        state_class: measurement
+        icon: mdi:ethernet
+        availability: >-
+          {{ value_json is defined and value_json.data is defined
+             and (value_json.data.result | selectattr('metric.reading', 'eq', 'link_speed') | list | count) == 1 }}
+        value_template: >-
+          {% set match = (value_json.data.result | selectattr('metric.reading', 'eq', 'link_speed') | list) %}
+          {% set speed = match[0].value[1] | float if match else none %}
+          {{ none if speed is none else (speed | int if speed == speed | int else speed | round(2)) }}
       - name: Cable line Downstream channels
         unique_id: cable_line_downstream_channels
         state_class: measurement
